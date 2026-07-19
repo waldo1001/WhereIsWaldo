@@ -73,3 +73,27 @@ export const reportLocationsRequestSchema = z.object({
   fixes: z.array(locationFixSchema).min(1),
 });
 export type ReportLocationsRequest = z.infer<typeof reportLocationsRequestSchema>;
+
+// specs/001 §5.3 `GET /locations/history` query params. `from`/`to` format only; the
+// 31-day span cap and the historyDays retention window are semantic checks owned by
+// src/domain/history/dateRange.ts (mutation-tested there, not here).
+export const locationHistoryQuerySchema = z.object({
+  userId: z.string().min(1),
+  deviceId: z.string().min(1).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  cursor: z.string().min(1).optional(),
+});
+export type LocationHistoryQuery = z.infer<typeof locationHistoryQuerySchema>;
+
+// specs/001 §7.4 `GET /geofence-events` query params (the history READ; the POST at the
+// same route is owned by B5, registered as a separate app.http handler).
+export const geofenceEventHistoryQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  userId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  cursor: z.string().min(1).optional(),
+});
+export type GeofenceEventHistoryQuery = z.infer<typeof geofenceEventHistoryQuerySchema>;
