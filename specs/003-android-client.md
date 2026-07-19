@@ -9,7 +9,7 @@ This task (**A1**) builds the **foundation only**: networking for all of 001 §3
 ## 2. Scope & non-scope
 
 **In scope (A1):**
-- Gradle (Kotlin DSL) project skeleton, min SDK 26, target/compile SDK 35, JDK 17.
+- Gradle (Kotlin DSL) project skeleton, min SDK 26, target/compile SDK 36, JDK 17.
 - A typed network client covering every endpoint in 001 §3–§7, the `{data,features}` / `{error}` envelopes, and the complete §10 error catalog.
 - `AuthProvider` abstraction (Firebase Auth ID token source) with a dev/stub implementation; no real `google-services.json`.
 - `PushTokenProvider` abstraction (FCM registration token source) with a stub implementation; the re-`POST /devices`-on-refresh trigger (§4.1, 000 §O4).
@@ -151,7 +151,7 @@ DTOs are `kotlinx.serialization` `@Serializable data class`es whose field names 
 
 One subtype per 001 §10 catalog code, plus two client-local variants: `NetworkFailure(cause: Throwable)` (no HTTP response at all — timeout, DNS, offline) and `Unknown(code, message, details, requestId)` (a future/unrecognized code — defensive, should never trigger against a spec-conformant backend). Code-specific `details` are typed where 001 defines a shape: `TrackingPaused.deviceSettings`, `GeofenceVersionConflict.currentEtag`, `ValidationFailed.fields`/`.reason`, `LocationBatchTooLarge.max`, `LimitExceeded.limit`, `RateLimited.retryAfterSeconds`.
 
-`ApiErrorMapper.fromCode(code, message, details, requestId): ApiError` is a pure function (`when (code) { "AUTH_MISSING_TOKEN" -> ...; ...; else -> Unknown(...) }`) covering all 20 catalog codes — the test checklist requires a test that asserts every single code maps to its named subtype (not `Unknown`).
+`ApiErrorMapper.fromCode(code, message, details, requestId): ApiError` is a pure function (`when (code) { "AUTH_MISSING_TOKEN" -> ...; ...; else -> Unknown(...) }`) covering all 21 catalog codes — the test checklist requires a test that asserts every single code maps to its named subtype (not `Unknown`).
 
 ### 6.2 `ApiResult<T>`
 
@@ -292,7 +292,7 @@ Every test in this task's diff was written and read for correctness but **not ex
 
 ## 15. Error cases
 
-Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§6.1) — no code is invented, all 20 catalog codes are represented as named `ApiError` subtypes. `AUTH_TOKEN_EXPIRED` triggers the retry-once path (§6.4); all other errors surface to the caller as `ApiResult.Failure` for the ViewModel layer to render (rendering itself is A2). `VALIDATION_FAILED` on `POST /locations` additionally drives the fix-queue's rejection path (§10.3) by parsing `details.fields` entries of the shape `"fixes[<index>].<prop>"` to identify offending `fixId`s.
+Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§6.1) — no code is invented, all 21 catalog codes are represented as named `ApiError` subtypes. `AUTH_TOKEN_EXPIRED` triggers the retry-once path (§6.4); all other errors surface to the caller as `ApiResult.Failure` for the ViewModel layer to render (rendering itself is A2). `VALIDATION_FAILED` on `POST /locations` additionally drives the fix-queue's rejection path (§10.3) by parsing `details.fields` entries of the shape `"fixes[<index>].<prop>"` to identify offending `fixId`s.
 
 ## 16. Test checklist
 
