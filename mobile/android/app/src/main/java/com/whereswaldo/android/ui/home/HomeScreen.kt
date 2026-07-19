@@ -11,26 +11,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.whereswaldo.android.ui.designsystem.WaldoTheme
 import com.whereswaldo.android.ui.designsystem.components.WaldoButton
+import com.whereswaldo.android.ui.designsystem.components.WaldoButtonStyle
 import com.whereswaldo.android.ui.designsystem.components.WaldoEmptyState
 import com.whereswaldo.android.ui.designsystem.components.WaldoErrorState
 import com.whereswaldo.android.ui.designsystem.components.WaldoLoadingState
 import com.whereswaldo.android.ui.designsystem.components.WaldoStatusChip
 import com.whereswaldo.android.ui.designsystem.components.WaldoStatusTone
 import com.whereswaldo.android.ui.designsystem.components.WaldoTopBar
+import com.whereswaldo.android.ui.nav.Destinations
 
 /**
  * The A1 proof screen (specs/003-android-client.md §12): rendered entirely through
  * `ui/designsystem` components, driven by state hoisted from [HomeViewModel]/[HomeStateHolder].
  * No styling constant appears in this file — only [WaldoTheme]-derived component calls.
+ *
+ * A2 addition: once registered, a short quick-nav list of [WaldoButton]s reaches the feature
+ * screens A1 only reserved route names for ([Destinations]) — this app has no bottom-nav/drawer
+ * design-system component yet, so this is the minimal reachability wiring rather than a proper
+ * navigation shell; a future design pass can replace it without touching any screen beneath it.
  */
 @Composable
 fun HomeRoute(
     viewModel: HomeViewModel,
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
+    onNavigate: (route: String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
-    HomeScreen(state = state, onSignIn = onSignIn, modifier = modifier)
+    HomeScreen(state = state, onSignIn = onSignIn, onNavigate = onNavigate, modifier = modifier)
 }
 
 @Composable
@@ -38,6 +46,7 @@ fun HomeScreen(
     state: HomeUiState,
     modifier: Modifier = Modifier,
     onSignIn: () -> Unit = {},
+    onNavigate: (route: String) -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         WaldoTopBar(title = "Where's waldo")
@@ -72,6 +81,13 @@ fun HomeScreen(
                             title = "Couldn't register this device",
                             message = "Check your connection and try again.",
                         )
+                    }
+                    if (state.registration != HomeUiState.RegistrationStatus.Registering) {
+                        WaldoButton(text = "Family map", onClick = { onNavigate(Destinations.Map.route) }, style = WaldoButtonStyle.Secondary)
+                        WaldoButton(text = "History", onClick = { onNavigate(Destinations.History.route) }, style = WaldoButtonStyle.Secondary)
+                        WaldoButton(text = "Geofences", onClick = { onNavigate(Destinations.Geofences.route) }, style = WaldoButtonStyle.Secondary)
+                        WaldoButton(text = "Settings", onClick = { onNavigate(Destinations.Settings.route) }, style = WaldoButtonStyle.Secondary)
+                        WaldoButton(text = "Invites", onClick = { onNavigate(Destinations.Invites.route) }, style = WaldoButtonStyle.Secondary)
                     }
                 }
             }
