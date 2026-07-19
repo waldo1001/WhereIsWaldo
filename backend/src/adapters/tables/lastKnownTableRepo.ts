@@ -6,7 +6,7 @@ import { createTableClient } from "./tableClientFactory";
 import type { FixSource, LastKnownRecord, LastKnownRepo } from "../../ports/repositories";
 
 const DEVICE_PREFIX = "device:";
-const MAX_RETRIES = 2; // one retry on ETag race (002 §2.5); second loss = skip.
+const MAX_RETRIES = 1; // one retry on ETag race (002 §2.5); second loss = skip.
 
 function isNotFound(err: unknown): boolean {
   return err instanceof RestError && err.statusCode === 404;

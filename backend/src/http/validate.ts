@@ -4,10 +4,28 @@
 import { z } from "zod";
 import { AppError } from "./errors";
 
+// specs/001 §5.1/§10 — array indices use BRACKET notation (e.g. "fixes[3].recordedAt"),
+// not dot-joined ("fixes.3.recordedAt"): a numeric segment appends as `[N]` with no
+// leading dot; a named segment appends as `.name`, except when it's the first segment.
+function formatFieldPath(path: (string | number)[]): string {
+  if (path.length === 0) return "(root)";
+  let formatted = "";
+  path.forEach((segment, index) => {
+    if (typeof segment === "number") {
+      formatted += `[${segment}]`;
+    } else if (index === 0) {
+      formatted += segment;
+    } else {
+      formatted += `.${segment}`;
+    }
+  });
+  return formatted;
+}
+
 export function parseOrThrow<S extends z.ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
   const result = schema.safeParse(input);
   if (!result.success) {
-    const fields = result.error.issues.map((issue) => (issue.path.length ? issue.path.join(".") : "(root)"));
+    const fields = result.error.issues.map((issue) => formatFieldPath(issue.path as (string | number)[]));
     throw new AppError("VALIDATION_FAILED", "request failed schema validation", { fields });
   }
   return result.data;

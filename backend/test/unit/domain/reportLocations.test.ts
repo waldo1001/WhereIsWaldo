@@ -613,7 +613,7 @@ describe("domain/location/reportLocations", () => {
         deps,
       ),
       "VALIDATION_FAILED",
-      { fields: ["fixes.0.lat"] },
+      { fields: ["fixes[0].lat"] },
     );
   });
 
@@ -632,11 +632,11 @@ describe("domain/location/reportLocations", () => {
         deps,
       ),
       "VALIDATION_FAILED",
-      { fields: ["fixes.0.source"] },
+      { fields: ["fixes[0].source"] },
     );
   });
 
-  it("uses dot-joined nested field paths for a deep validation error (kills the validate.ts path.join mutant)", async () => {
+  it("uses bracket-notation array indices for a deep validation error (kills the validate.ts path-join mutant)", async () => {
     const deps = buildDeps();
     seedDevice(deps);
     const fixes = [
@@ -652,7 +652,7 @@ describe("domain/location/reportLocations", () => {
         deps,
       ),
       "VALIDATION_FAILED",
-      { fields: ["fixes.3.recordedAt"] },
+      { fields: ["fixes[3].recordedAt"] },
     );
   });
 });
