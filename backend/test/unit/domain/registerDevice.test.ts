@@ -1,0 +1,337 @@
+import { describe, expect, it } from "vitest";
+import { registerDevice } from "../../../src/domain/device/registerDevice";
+import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
+import { FixedClock } from "../../fakes/fixedClock";
+import { expectAppError } from "../../support/expectAppError";
+
+const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
+const DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
+const OTHER_DEVICE_ID = "4f1a3b0d-7c2e-5f9a-ab3c-8d6e5f4a3b2c";
+
+function buildDeps() {
+  const entitlementsRepo = new InMemoryEntitlementsRepo();
+  entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
+  return {
+    deviceRepo: new InMemoryDeviceRepo(),
+    entitlementsRepo,
+    clock: new FixedClock(new Date("2026-07-19T09:05:00Z")),
+  };
+}
+
+function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<Parameters<InMemoryDeviceRepo["seed"]>[1]>) {
+  deps.deviceRepo.seed(FAMILY_ID, {
+    deviceId: "seed-device",
+    ownerUserId: "u1",
+    platform: "android",
+    model: "Pixel",
+    appVersion: "1.0.0",
+    deviceName: "Pixel",
+    pushInvalid: false,
+    syncIntervalMinutes: 15,
+    trackingEnabled: true,
+    registeredAt: "2026-07-01T00:00:00Z",
+    lastSeenAt: "2026-07-01T00:00:00Z",
+    ...overrides,
+  });
+}
+
+describe("domain/device/registerDevice", () => {
+  it("first registration applies defaults: syncIntervalMinutes 15, trackingEnabled true, deviceName = model when omitted", async () => {
+    const deps = buildDeps();
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(true);
+    expect(result.device).toMatchObject({
+      deviceId: DEVICE_ID,
+      ownerUserId: "u1",
+      platform: "android",
+      model: "Pixel 8",
+      appVersion: "1.0.0",
+      deviceName: "Pixel 8",
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      pushInvalid: false,
+    });
+  });
+
+  it("upsert of an existing deviceId updates pushToken/appVersion/model/platform, preserves interval/paused/deviceName", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, {
+      deviceId: DEVICE_ID,
+      model: "Pixel 8",
+      deviceName: "Noor's phone",
+      pushToken: "old-token",
+      syncIntervalMinutes: 30,
+      trackingEnabled: false,
+    });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: {
+          deviceId: DEVICE_ID,
+          platform: "ios",
+          model: "Pixel 9",
+          appVersion: "1.1.0",
+          pushToken: "new-token",
+        },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(false);
+    expect(result.device).toMatchObject({
+      platform: "ios",
+      model: "Pixel 9",
+      appVersion: "1.1.0",
+      // parent-managed settings MUST NOT reset:
+      syncIntervalMinutes: 30,
+      trackingEnabled: false,
+      deviceName: "Noor's phone",
+    });
+    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    expect(stored?.pushToken).toBe("new-token");
+  });
+
+  it("an upsert that omits pushToken/locationPushToken preserves the previously stored ones", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, {
+      deviceId: DEVICE_ID,
+      pushToken: "existing-push-token",
+      locationPushToken: "existing-location-token",
+    });
+
+    await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel", appVersion: "1.2.0" },
+      },
+      deps,
+    );
+
+    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    expect(stored?.pushToken).toBe("existing-push-token");
+    expect(stored?.locationPushToken).toBe("existing-location-token");
+  });
+
+  it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: null,
+          body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "FAMILY_NOT_FOUND",
+    );
+  });
+
+  it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
+    const deviceRepo = new InMemoryDeviceRepo();
+    const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
+    const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        { deviceRepo, entitlementsRepo, clock },
+      ),
+      "INTERNAL_ERROR",
+    );
+  });
+
+  it("throws VALIDATION_FAILED with details.fields: [\"platform\"] when platform is not android/ios", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: DEVICE_ID, platform: "windows", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["platform"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED with details.fields: [\"deviceId\"] when deviceId is not a UUID", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: "not-a-uuid", platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["deviceId"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED for an empty deviceName", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: {
+            deviceId: DEVICE_ID,
+            platform: "android",
+            model: "Pixel 8",
+            appVersion: "1.0.0",
+            deviceName: "",
+          },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["deviceName"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED for a deviceName over 40 chars", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: {
+            deviceId: DEVICE_ID,
+            platform: "android",
+            model: "Pixel 8",
+            appVersion: "1.0.0",
+            deviceName: "x".repeat(41),
+          },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["deviceName"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED for an empty locationPushToken", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: {
+            deviceId: DEVICE_ID,
+            platform: "android",
+            model: "Pixel 8",
+            appVersion: "1.0.0",
+            locationPushToken: "",
+          },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["locationPushToken"] },
+    );
+  });
+
+  it("accepts registration without a pushToken (optional, §4.1)", async () => {
+    const deps = buildDeps();
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(true);
+  });
+
+  it('throws VALIDATION_FAILED with details.reason "deviceIdInUse" when the deviceId belongs to another user', async () => {
+    const deps = buildDeps();
+    seedDevice(deps, { deviceId: DEVICE_ID, ownerUserId: "someone-else", deviceName: "Someone's phone" });
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { reason: "deviceIdInUse" },
+    );
+  });
+
+  it("throws LIMIT_EXCEEDED with details.limit maxDevices at the plan cap", async () => {
+    const deps = buildDeps();
+    for (let i = 0; i < 10; i += 1) {
+      seedDevice(deps, { deviceId: `seed-device-${i}` });
+    }
+
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "LIMIT_EXCEEDED",
+      { limit: "maxDevices" },
+    );
+  });
+
+  it("never counts an upsert of an existing device against the cap", async () => {
+    const deps = buildDeps();
+    for (let i = 0; i < 9; i += 1) {
+      seedDevice(deps, { deviceId: `seed-device-${i}` });
+    }
+    // 10th device already registered to this same user — an upsert, not a new registration.
+    seedDevice(deps, { deviceId: OTHER_DEVICE_ID });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: OTHER_DEVICE_ID, platform: "ios", model: "iPhone", appVersion: "2.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(false);
+  });
+});
