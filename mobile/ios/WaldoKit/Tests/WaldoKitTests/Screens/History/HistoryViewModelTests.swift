@@ -102,4 +102,67 @@ struct HistoryViewModelTests {
             return
         }
     }
+
+    // MARK: - specs/001 §5.3 max 31-day span (client-side pre-check, review-gate finding #1)
+
+    @Test func load_dateRangeExactly31Days_isAllowed() async {
+        let api = FakeAPIClient()
+        api.getLocationHistoryHandler = { _, _, _, _, _, _ in
+            TestFeatures.envelope(LocationHistoryResponse(points: [], nextCursor: nil))
+        }
+        let viewModel = HistoryViewModel(apiClient: api, userId: "u1", fromDate: "2026-07-01", toDate: "2026-07-31")
+
+        await viewModel.load()
+
+        #expect(api.getLocationHistoryCalls.count == 1)
+        #expect(viewModel.state == .loaded(points: [], hasMore: false))
+    }
+
+    @Test func load_dateRangeOver31Days_isRejectedWithoutCallingTheApi() async {
+        let api = FakeAPIClient()
+        api.getLocationHistoryHandler = { _, _, _, _, _, _ in
+            TestFeatures.envelope(LocationHistoryResponse(points: [], nextCursor: nil))
+        }
+        let viewModel = HistoryViewModel(apiClient: api, userId: "u1", fromDate: "2026-07-01", toDate: "2026-08-02")
+
+        await viewModel.load()
+
+        #expect(api.getLocationHistoryCalls.isEmpty, "a >31-day span must never reach the network")
+        guard case .error = viewModel.state else {
+            Issue.record("expected .error state, got \(viewModel.state)")
+            return
+        }
+    }
+
+    @Test func load_reversedDateRange_isRejectedWithoutCallingTheApi() async {
+        let api = FakeAPIClient()
+        api.getLocationHistoryHandler = { _, _, _, _, _, _ in
+            TestFeatures.envelope(LocationHistoryResponse(points: [], nextCursor: nil))
+        }
+        let viewModel = HistoryViewModel(apiClient: api, userId: "u1", fromDate: "2026-07-19", toDate: "2026-07-01")
+
+        await viewModel.load()
+
+        #expect(api.getLocationHistoryCalls.isEmpty)
+        guard case .error = viewModel.state else {
+            Issue.record("expected .error state, got \(viewModel.state)")
+            return
+        }
+    }
+
+    @Test func fromDate_and_toDate_arePublished_forDatePickerBinding() async {
+        // review-gate finding #1 — the screen binds a DatePicker directly to these; they must be
+        // independently settable and reflected immediately (no separate "commit" step).
+        let api = FakeAPIClient()
+        api.getLocationHistoryHandler = { _, _, _, _, _, _ in
+            TestFeatures.envelope(LocationHistoryResponse(points: [], nextCursor: nil))
+        }
+        let viewModel = HistoryViewModel(apiClient: api, userId: "u1", fromDate: "2026-07-01", toDate: "2026-07-19")
+
+        viewModel.fromDate = "2026-07-10"
+        viewModel.toDate = "2026-07-20"
+
+        #expect(viewModel.fromDate == "2026-07-10")
+        #expect(viewModel.toDate == "2026-07-20")
+    }
 }
