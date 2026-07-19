@@ -114,9 +114,9 @@ class MapStateHolderTest {
     }
 
     @Test
-    fun `a failure surfaces Error with the ApiError message`() = runTest {
+    fun `a failure surfaces Error with the user-facing message, never the raw server message`() = runTest {
         val api = FakeLocationsApi().apply {
-            getLatestLocationsResult = ApiResult.Failure(ApiError.FamilyNotFound("no family", "r_1"))
+            getLatestLocationsResult = ApiResult.Failure(ApiError.FamilyNotFound("raw debug text from server", "r_1"))
         }
 
         val holder = MapStateHolder(api, backgroundScope)
@@ -124,7 +124,7 @@ class MapStateHolderTest {
 
         val state = holder.state.value
         assertTrue(state is MapUiState.Error)
-        assertEquals("no family", (state as MapUiState.Error).message)
+        assertEquals("We couldn't find your family. Please try again.", (state as MapUiState.Error).message)
     }
 
     @Test

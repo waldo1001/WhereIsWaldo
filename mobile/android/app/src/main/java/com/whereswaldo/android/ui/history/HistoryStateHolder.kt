@@ -4,6 +4,7 @@ import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.dto.HistoryPointDto
 import com.whereswaldo.android.network.dto.LocationHistoryResponseDto
 import com.whereswaldo.android.network.ports.LocationsApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,7 +59,7 @@ class HistoryStateHolder(private val locationsApi: LocationsApi) {
                 points = existing + result.data.points.map { it.toUi() },
                 nextCursor = result.data.nextCursor,
             )
-            is ApiResult.Failure -> HistoryUiState.Error(result.error.message)
+            is ApiResult.Failure -> HistoryUiState.Error(result.error.userMessage())
         }
     }
 }

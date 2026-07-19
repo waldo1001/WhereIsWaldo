@@ -2,6 +2,7 @@ package com.whereswaldo.android.ui.invites
 
 import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.ports.FamilyApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +29,7 @@ class InvitesStateHolder(private val familyApi: FamilyApi) {
             )
             is ApiResult.Failure -> _state.value = _state.value.copy(
                 isCreatingInvite = false,
-                createInviteError = result.error.message,
+                createInviteError = result.error.userMessage(),
             )
         }
     }
@@ -45,7 +46,7 @@ class InvitesStateHolder(private val familyApi: FamilyApi) {
             )
             is ApiResult.Failure -> _state.value = _state.value.copy(
                 isAcceptingInvite = false,
-                acceptInviteError = result.error.message,
+                acceptInviteError = result.error.userMessage(),
             )
         }
     }

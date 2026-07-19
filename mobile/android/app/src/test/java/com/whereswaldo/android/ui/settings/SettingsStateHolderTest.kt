@@ -155,10 +155,15 @@ class SettingsStateHolderTest {
     }
 
     @Test
-    fun `removeMember failure such as last-parent surfaces mutationError and keeps the member`() = runTest {
+    fun `removeMember failure such as last-parent surfaces the user-facing mutationError, never raw server text`() = runTest {
         val familyApi = FakeFamilyApi().apply {
             removeMemberResult = ApiResult.Failure(
-                ApiError.ValidationFailed(fields = null, reason = "lastParent", message = "last parent", requestId = "r_9"),
+                ApiError.ValidationFailed(
+                    fields = null,
+                    reason = "lastParent",
+                    message = "raw debug text from server",
+                    requestId = "r_9",
+                ),
             )
         }
         val holder = SettingsStateHolder(familyApi, FakeDevicesApi(), backgroundScope)
@@ -167,7 +172,7 @@ class SettingsStateHolderTest {
         holder.removeMember("uid-parent")
 
         val state = holder.state.value as SettingsUiState.Content
-        assertEquals("last parent", state.mutationError)
+        assertEquals("A family must always have at least one parent.", state.mutationError)
         assertTrue(state.members.any { it.userId == "uid-parent" })
     }
 }

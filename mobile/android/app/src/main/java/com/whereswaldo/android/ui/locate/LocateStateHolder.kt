@@ -5,6 +5,7 @@ import com.whereswaldo.android.network.dto.LastKnownDto
 import com.whereswaldo.android.network.dto.LocateFixDto
 import com.whereswaldo.android.network.dto.LocateRequestDto
 import com.whereswaldo.android.network.ports.LocateApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,7 +45,7 @@ class LocateStateHolder(
         pollJob = scope.launch {
             when (val result = locateApi.createLocateRequest(targetUserId, targetDeviceId)) {
                 is ApiResult.Success -> onCreated(result.data)
-                is ApiResult.Failure -> _state.value = LocateUiState.Error(result.error.message)
+                is ApiResult.Failure -> _state.value = LocateUiState.Error(result.error.userMessage())
             }
         }
     }
@@ -78,7 +79,7 @@ class LocateStateHolder(
                     _state.value = LocateUiState.Polling(dto.requestId, previous?.lastKnown, dto.expiresAt)
                 }
                 is ApiResult.Failure -> {
-                    _state.value = LocateUiState.Error(result.error.message)
+                    _state.value = LocateUiState.Error(result.error.userMessage())
                     return
                 }
             }

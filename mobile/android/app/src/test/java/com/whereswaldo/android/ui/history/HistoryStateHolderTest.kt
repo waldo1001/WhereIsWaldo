@@ -119,9 +119,11 @@ class HistoryStateHolderTest {
     }
 
     @Test
-    fun `a failed load surfaces Error with the ApiError message`() = runTest {
+    fun `a failed load surfaces Error with the user-facing message, never the raw server message`() = runTest {
         val api = FakeLocationsApi().apply {
-            historyResults.add(ApiResult.Failure(ApiError.ValidationFailed(null, "beyondRetention", "too old", "r_1")))
+            historyResults.add(
+                ApiResult.Failure(ApiError.ValidationFailed(null, "beyondRetention", "raw debug text from server", "r_1")),
+            )
         }
         val holder = HistoryStateHolder(api)
 
@@ -129,7 +131,10 @@ class HistoryStateHolderTest {
 
         val state = holder.state.value
         assertTrue(state is HistoryUiState.Error)
-        assertEquals("too old", (state as HistoryUiState.Error).message)
+        assertEquals(
+            "That date range is further back than your plan allows.",
+            (state as HistoryUiState.Error).message,
+        )
     }
 
     @Test

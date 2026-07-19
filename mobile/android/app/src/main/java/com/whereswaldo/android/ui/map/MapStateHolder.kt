@@ -4,6 +4,7 @@ import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.dto.LatestDeviceDto
 import com.whereswaldo.android.network.dto.LatestMemberDto
 import com.whereswaldo.android.network.ports.LocationsApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +39,7 @@ class MapStateHolder(
                 _state.value = MapUiState.Content(result.data.members.map { it.toUi() })
             }
             is ApiResult.Failure -> {
-                _state.value = MapUiState.Error(result.error.message)
+                _state.value = MapUiState.Error(result.error.userMessage())
             }
         }
     }

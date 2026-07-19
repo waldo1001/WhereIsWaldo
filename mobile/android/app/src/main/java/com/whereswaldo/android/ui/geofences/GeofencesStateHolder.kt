@@ -4,6 +4,7 @@ import com.whereswaldo.android.network.ApiError
 import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.dto.GeofenceDto
 import com.whereswaldo.android.network.ports.GeofenceApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,7 +42,7 @@ class GeofencesStateHolder(
                     )
                 }
             }
-            is ApiResult.Failure -> _state.value = GeofencesUiState.Error(result.error.message)
+            is ApiResult.Failure -> _state.value = GeofencesUiState.Error(result.error.userMessage())
         }
     }
 
@@ -97,7 +98,7 @@ class GeofencesStateHolder(
                 if (error is ApiError.GeofenceVersionConflict) {
                     reconcileConflict(current)
                 } else {
-                    _state.value = current.copy(isSaving = false, saveError = error.message)
+                    _state.value = current.copy(isSaving = false, saveError = error.userMessage())
                 }
             }
         }
@@ -120,7 +121,7 @@ class GeofencesStateHolder(
             }
             is ApiResult.Failure -> _state.value = pending.copy(
                 isSaving = false,
-                saveError = "Couldn't refresh after conflict: ${refreshed.error.message}",
+                saveError = refreshed.error.userMessage(),
             )
         }
     }

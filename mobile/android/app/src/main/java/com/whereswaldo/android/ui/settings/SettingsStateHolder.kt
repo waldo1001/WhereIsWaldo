@@ -7,6 +7,7 @@ import com.whereswaldo.android.network.dto.UpdateDeviceRequestDto
 import com.whereswaldo.android.network.dto.UpdateMemberRequestDto
 import com.whereswaldo.android.network.ports.DevicesApi
 import com.whereswaldo.android.network.ports.FamilyApi
+import com.whereswaldo.android.network.userMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,12 +41,12 @@ class SettingsStateHolder(
         _state.value = SettingsUiState.Loading
         when (val familyResult = familyApi.getMyFamily()) {
             is ApiResult.Failure -> {
-                _state.value = SettingsUiState.Error(familyResult.error.message)
+                _state.value = SettingsUiState.Error(familyResult.error.userMessage())
                 return
             }
             is ApiResult.Success -> {
                 when (val devicesResult = devicesApi.listDevices()) {
-                    is ApiResult.Failure -> _state.value = SettingsUiState.Error(devicesResult.error.message)
+                    is ApiResult.Failure -> _state.value = SettingsUiState.Error(devicesResult.error.userMessage())
                     is ApiResult.Success -> {
                         _state.value = SettingsUiState.Content(
                             myRole = familyResult.data.me.role,
@@ -88,7 +89,7 @@ class SettingsStateHolder(
                 }
                 _state.value = current.copy(devices = updated, isMutating = false)
             }
-            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.message)
+            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.userMessage())
         }
     }
 
@@ -106,7 +107,7 @@ class SettingsStateHolder(
                 val updated = current.members.map { member -> if (member.userId == userId) result.data.toUi() else member }
                 _state.value = current.copy(members = updated, isMutating = false)
             }
-            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.message)
+            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.userMessage())
         }
     }
 
@@ -125,7 +126,7 @@ class SettingsStateHolder(
                 members = current.members.filterNot { it.userId == userId },
                 isMutating = false,
             )
-            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.message)
+            is ApiResult.Failure -> _state.value = current.copy(isMutating = false, mutationError = result.error.userMessage())
         }
     }
 }

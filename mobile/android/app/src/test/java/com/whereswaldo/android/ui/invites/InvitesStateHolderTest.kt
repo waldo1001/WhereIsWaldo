@@ -35,16 +35,16 @@ class InvitesStateHolderTest {
     }
 
     @Test
-    fun `createInvite failure (non-parent) surfaces createInviteError`() = runTest {
+    fun `createInvite failure (non-parent) surfaces the user-facing message, never raw server text`() = runTest {
         val api = FakeFamilyApi().apply {
-            createInviteResult = ApiResult.Failure(ApiError.AuthForbidden("not a parent", "r_1"))
+            createInviteResult = ApiResult.Failure(ApiError.AuthForbidden("raw debug text from server", "r_1"))
         }
         val holder = InvitesStateHolder(api)
 
         holder.createInvite(role = "member")
 
         val state = holder.state.value
-        assertEquals("not a parent", state.createInviteError)
+        assertEquals("You don't have permission to do that.", state.createInviteError)
         assertNull(state.createdInvite)
         assertEquals(false, state.isCreatingInvite)
     }
@@ -69,31 +69,31 @@ class InvitesStateHolderTest {
     }
 
     @Test
-    fun `acceptInvite surfaces each catalog error distinctly`() = runTest {
+    fun `acceptInvite surfaces each catalog error as its distinct user-facing message`() = runTest {
         val api = FakeFamilyApi()
         val holder = InvitesStateHolder(api)
 
-        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteInvalid("unknown code", "r_1"))
+        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteInvalid("raw debug text from server", "r_1"))
         holder.acceptInvite("BADCODE1", "Noor")
-        assertEquals("unknown code", holder.state.value.acceptInviteError)
+        assertEquals("That invite code isn't valid.", holder.state.value.acceptInviteError)
 
-        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteAlreadyUsed("already used", "r_2"))
+        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteAlreadyUsed("raw debug text from server", "r_2"))
         holder.acceptInvite("USEDCODE", "Noor")
-        assertEquals("already used", holder.state.value.acceptInviteError)
+        assertEquals("That invite code has already been used.", holder.state.value.acceptInviteError)
 
-        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteExpired("expired", "r_3"))
+        api.acceptInviteResult = ApiResult.Failure(ApiError.InviteExpired("raw debug text from server", "r_3"))
         holder.acceptInvite("OLDCODE1", "Noor")
-        assertEquals("expired", holder.state.value.acceptInviteError)
+        assertEquals("This invite code has expired.", holder.state.value.acceptInviteError)
 
-        api.acceptInviteResult = ApiResult.Failure(ApiError.FamilyAlreadyMember("already in a family", "r_4"))
+        api.acceptInviteResult = ApiResult.Failure(ApiError.FamilyAlreadyMember("raw debug text from server", "r_4"))
         holder.acceptInvite("ANYCODE1", "Noor")
-        assertEquals("already in a family", holder.state.value.acceptInviteError)
+        assertEquals("You're already part of a family.", holder.state.value.acceptInviteError)
     }
 
     @Test
     fun `create and accept flows are independent`() = runTest {
         val api = FakeFamilyApi().apply {
-            createInviteResult = ApiResult.Failure(ApiError.AuthForbidden("nope", "r_1"))
+            createInviteResult = ApiResult.Failure(ApiError.AuthForbidden("raw debug text from server", "r_1"))
             acceptInviteResult = ApiResult.Success(AcceptInviteResponseDto("fam_test", "Wauters", "member"), defaultFeatures())
         }
         val holder = InvitesStateHolder(api)
@@ -102,7 +102,7 @@ class InvitesStateHolderTest {
         holder.acceptInvite("CODE1234", "Noor")
 
         val state = holder.state.value
-        assertEquals("nope", state.createInviteError)
+        assertEquals("You don't have permission to do that.", state.createInviteError)
         assertEquals("Wauters", state.acceptedFamily?.familyName)
     }
 }

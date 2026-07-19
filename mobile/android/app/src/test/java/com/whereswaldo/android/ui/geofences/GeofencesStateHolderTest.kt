@@ -171,13 +171,15 @@ class GeofencesStateHolderTest {
     }
 
     @Test
-    fun `a non-conflict save failure surfaces saveError without touching the pending list`() = runTest {
+    fun `a non-conflict save failure surfaces the user-facing saveError, never the raw server message`() = runTest {
         val api = FakeGeofenceApi().apply {
             getGeofencesResult = ApiResult.Success(
                 ETagged(GeofenceConfigResponseDto(version = 1, geofences = listOf(homeDto)), "\"1\""),
                 features = defaultFeatures(),
             )
-            replaceGeofencesResult = ApiResult.Failure(ApiError.LimitExceeded("maxGeofences", "cap hit", "r_2"))
+            replaceGeofencesResult = ApiResult.Failure(
+                ApiError.LimitExceeded("maxGeofences", "raw debug text from server", "r_2"),
+            )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
         advanceUntilIdle()
@@ -185,7 +187,7 @@ class GeofencesStateHolderTest {
         holder.save()
 
         val state = holder.state.value as GeofencesUiState.Content
-        assertEquals("cap hit", state.saveError)
+        assertEquals("You've reached your geofence limit for this plan.", state.saveError)
         assertEquals(false, state.conflict)
         assertEquals(false, state.isSaving)
         assertEquals("\"1\"", state.etag)
