@@ -8,6 +8,12 @@ const FIREBASE_JWKS_URL = new URL(
   "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
 );
 
+// specs/001 §2.2 requires "iat in the past". jose's jwtVerify() only runs that check when
+// `maxTokenAge` is supplied (see jose's jwt_claims_set.js) — and Firebase sets iat = exp - 1h,
+// so a maxTokenAge bound risks rejecting live tokens. An explicit guard below is precise and
+// side-effect-free instead. Small allowance for clock skew between the issuer and this host.
+const IAT_CLOCK_TOLERANCE_MS = 5_000;
+
 let jwks: ReturnType<typeof createRemoteJWKSet> | undefined;
 
 function getJwks() {
@@ -29,6 +35,11 @@ export class FirebaseJoseVerifier implements TokenVerifier {
       });
       if (!payload.sub) {
         throw new TokenInvalidError("token missing sub claim");
+      }
+      // jwtVerify() above does not enforce this claim on its own (see comment near
+      // IAT_CLOCK_TOLERANCE_MS) — enforce it explicitly (specs/001 §2.2: "iat in the past").
+      if (typeof payload.iat !== "number" || payload.iat * 1000 > Date.now() + IAT_CLOCK_TOLERANCE_MS) {
+        throw new TokenInvalidError("token iat is not in the past");
       }
       return { uid: payload.sub };
     } catch (err) {
