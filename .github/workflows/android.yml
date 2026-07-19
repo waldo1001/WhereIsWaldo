@@ -7,6 +7,11 @@ on:
   pull_request:
     paths: ["mobile/android/**", ".github/workflows/android.yml"]
 
+# Least privilege (docs/security-review-checklist.md §2): this workflow only checks out,
+# builds, and runs unit tests — no deploy, no write access needed.
+permissions:
+  contents: read
+
 jobs:
   build:
     # Unique job name: required status checks match on job names, and "build" would

@@ -8,7 +8,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * The single place a wire error `code` string is turned into a typed [ApiError]
- * (specs/003-android-client.md §6.1). Every one of the 20 codes in 001-api-contract.md §10 maps
+ * (specs/003-android-client.md §6.1). Every one of the 21 codes in 001-api-contract.md §10 maps
  * to its own named subtype; anything else maps to [ApiError.Unknown] defensively.
  */
 object ApiErrorMapper {
