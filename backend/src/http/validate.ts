@@ -31,3 +31,27 @@ export const registerDeviceRequestSchema = z.object({
   deviceName: z.string().min(1).max(40).optional(),
 });
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+
+// specs/001 §5.1 / §1.4 — one location fix. `fixes` array length (1-100) is enforced by
+// the domain (LOCATION_BATCH_TOO_LARGE / VALIDATION_FAILED are distinct codes, §10), not here.
+export const locationFixSchema = z.object({
+  fixId: z.string().uuid(),
+  recordedAt: z.string().datetime(),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  accuracyM: z.number().min(0).max(10000),
+  altitudeM: z.number().optional(),
+  speedMps: z.number().min(0).optional(),
+  bearingDeg: z.number().min(0).lt(360).optional(),
+  batteryPct: z.number().int().min(0).max(100),
+  source: z.enum(["periodic", "locate", "geofence", "manual"]),
+});
+export type LocationFixRequest = z.infer<typeof locationFixSchema>;
+
+// specs/001 §5.1 — batchId + at least one fix (empty batch -> VALIDATION_FAILED here;
+// the >100 cap is a separate pre-check in the domain, see above).
+export const reportLocationsRequestSchema = z.object({
+  batchId: z.string().uuid(),
+  fixes: z.array(locationFixSchema).min(1),
+});
+export type ReportLocationsRequest = z.infer<typeof reportLocationsRequestSchema>;
