@@ -1,10 +1,9 @@
-// specs/001 §5.3/§7.4, §9 — history query date-range validation: YYYY-MM-DD format, real
-// calendar dates, ordering, the 31-day span cap, and the historyDays retention window
+// specs/001 §5.3/§7.4, §9 — history query date-range validation: real YYYY-MM-DD calendar
+// dates, ordering, the 31-day span cap, and the historyDays retention window
 // ("beyondRetention"). Pure (no Azure imports); mutation-tested directly.
 
 import { AppError } from "../../http/errors";
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_SPAN_DAYS = 31;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -13,8 +12,15 @@ function parseUtcDateMs(dateStr: string): number {
   return Date.parse(`${dateStr}T00:00:00.000Z`);
 }
 
-/** Rejects dates that parse but overflow their calendar (e.g. "2026-02-30" -> March 2). */
-function isRealCalendarDate(dateStr: string, ms: number): boolean {
+/**
+ * True only for a genuine YYYY-MM-DD UTC calendar date. This single check subsumes shape
+ * validation too: the round-trip is always rebuilt as zero-padded 4-2-2 digits, so a
+ * differently-shaped or malformed input (e.g. "2026-7-19", "07/19/2026", "2026-13-01",
+ * "2026-02-30") can never match it back — there is no separate regex/shape gate to keep in
+ * sync with this reconstruction.
+ */
+function isValidCalendarDate(dateStr: string): boolean {
+  const ms = parseUtcDateMs(dateStr);
   if (Number.isNaN(ms)) return false;
   const d = new Date(ms);
   const roundTrip = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(
@@ -36,25 +42,17 @@ function utcMidnightMs(date: Date): number {
  *  - `from` older than `historyDays` back from `now` -> `details.reason: "beyondRetention"` (§9)
  */
 export function validateHistoryDateRange(from: string, to: string, historyDays: number, now: Date): void {
-  const formatFields: string[] = [];
-  if (!DATE_RE.test(from)) formatFields.push("from");
-  if (!DATE_RE.test(to)) formatFields.push("to");
-  if (formatFields.length > 0) {
-    throw new AppError("VALIDATION_FAILED", "from/to must be YYYY-MM-DD calendar dates", {
-      fields: formatFields,
+  const invalidFields: string[] = [];
+  if (!isValidCalendarDate(from)) invalidFields.push("from");
+  if (!isValidCalendarDate(to)) invalidFields.push("to");
+  if (invalidFields.length > 0) {
+    throw new AppError("VALIDATION_FAILED", "from/to must be valid YYYY-MM-DD calendar dates", {
+      fields: invalidFields,
     });
   }
 
   const fromMs = parseUtcDateMs(from);
   const toMs = parseUtcDateMs(to);
-  const calendarFields: string[] = [];
-  if (!isRealCalendarDate(from, fromMs)) calendarFields.push("from");
-  if (!isRealCalendarDate(to, toMs)) calendarFields.push("to");
-  if (calendarFields.length > 0) {
-    throw new AppError("VALIDATION_FAILED", "from/to must be valid calendar dates", {
-      fields: calendarFields,
-    });
-  }
 
   if (toMs < fromMs) {
     throw new AppError("VALIDATION_FAILED", "to must not be before from", { fields: ["to"] });

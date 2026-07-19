@@ -30,17 +30,15 @@ function encode(value: unknown): string {
 }
 
 function decode<T>(raw: string, schema: z.ZodType<T>): T {
-  let parsed: unknown;
+  // A single try/catch around both the base64url/JSON decode AND the schema parse (which
+  // throws, not safeParse) — one failure mode, one error, no redundant fallback path that
+  // could mask a mutated/removed catch.
   try {
-    parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf-8"));
+    const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf-8"));
+    return schema.parse(parsed);
   } catch {
     throw new AppError("VALIDATION_FAILED", "cursor is not a valid cursor", { fields: ["cursor"] });
   }
-  const result = schema.safeParse(parsed);
-  if (!result.success) {
-    throw new AppError("VALIDATION_FAILED", "cursor is not a valid cursor", { fields: ["cursor"] });
-  }
-  return result.data;
 }
 
 export function encodeFixCursor(cursor: FixCursor): string {

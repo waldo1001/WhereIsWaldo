@@ -45,6 +45,14 @@ describe("domain/history/dateRange — validateHistoryDateRange (001 §5.3/§7.4
     await expectAppError(run("2026-02-30", "2026-03-01"), "VALIDATION_FAILED", { fields: ["from"] });
   });
 
+  it("rejects an impossible calendar date in `to` specifically (not just `from`)", async () => {
+    await expectAppError(run("2026-03-01", "2026-02-30"), "VALIDATION_FAILED", { fields: ["to"] });
+  });
+
+  it("rejects an out-of-range month (2026-13-01), which Date.parse turns into NaN rather than overflow", async () => {
+    await expectAppError(run("2026-13-01", "2026-07-19"), "VALIDATION_FAILED", { fields: ["from"] });
+  });
+
   it("rejects to before from", async () => {
     await expectAppError(run("2026-07-19", "2026-07-01"), "VALIDATION_FAILED", { fields: ["to"] });
   });

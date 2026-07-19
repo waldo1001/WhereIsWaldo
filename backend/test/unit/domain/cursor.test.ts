@@ -51,6 +51,26 @@ describe("domain/history/cursor — fix cursor (per-device byte offsets, 002 §3
       { fields: ["cursor"] },
     );
   });
+
+  it("rejects a date with a leading prefix (the date shape must be anchored at the start)", async () => {
+    const raw = Buffer.from(JSON.stringify({ d: "xx2026-07-05", o: {} }), "utf-8").toString("base64url");
+
+    await expectAppError(
+      Promise.resolve().then(() => decodeFixCursor(raw)),
+      "VALIDATION_FAILED",
+      { fields: ["cursor"] },
+    );
+  });
+
+  it("rejects a date with a trailing suffix (the date shape must be anchored at the end)", async () => {
+    const raw = Buffer.from(JSON.stringify({ d: "2026-07-05xx", o: {} }), "utf-8").toString("base64url");
+
+    await expectAppError(
+      Promise.resolve().then(() => decodeFixCursor(raw)),
+      "VALIDATION_FAILED",
+      { fields: ["cursor"] },
+    );
+  });
 });
 
 describe("domain/history/cursor — event cursor (single byte offset, 002 §3.3)", () => {
