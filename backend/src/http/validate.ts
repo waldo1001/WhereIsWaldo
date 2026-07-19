@@ -57,3 +57,21 @@ export const updateMemberRequestSchema = z
     message: "at least one field (role or displayName) is required",
   });
 export type UpdateMemberRequest = z.infer<typeof updateMemberRequestSchema>;
+
+// specs/001 §3.5/§3.6 — the {userId} path param. Table Storage forbids `/ \ # ?` and
+// control characters in PartitionKey/RowKey (002 §2); rejecting those here surfaces a
+// clean 400 VALIDATION_FAILED instead of a raw SDK RestError leaking out as 500.
+// \p{Cc} = Unicode "control character" category (requires the `u` flag); `/` and `\`
+// are escaped because they're also forbidden Table Storage key characters. Uses `*`
+// (not `+`) so an empty string fails ONLY `.min(1)` below, not this regex too — a single
+// VALIDATION_FAILED issue per problem, instead of a duplicate "userId" field entry.
+const ALLOWED_TABLE_KEY_CHARS = /^[^\p{Cc}/\\#?]*$/u;
+
+export const memberUserIdParamSchema = z.object({
+  userId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(ALLOWED_TABLE_KEY_CHARS, "userId contains characters forbidden in a Table Storage key"),
+});
+export type MemberUserIdParam = z.infer<typeof memberUserIdParamSchema>;

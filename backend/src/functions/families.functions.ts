@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { authenticate } from "../http/authGuard";
 import { ok, fail } from "../http/envelope";
 import { AppError } from "../http/errors";
+import { memberUserIdParamSchema, parseOrThrow } from "../http/validate";
 import { createFamily } from "../domain/family/createFamily";
 import { getMyFamily } from "../domain/family/getMyFamily";
 import { createInvite } from "../domain/family/createInvite";
@@ -141,9 +142,10 @@ app.http("updateMember", {
     const requestId = newRequestId();
     try {
       const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await updateMember(
-        { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId: request.params.userId ?? "", body },
+        { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId, body },
         { familyRepo, userRepo, entitlementsRepo, usageRepo, clock },
       );
       return { status: 200, jsonBody: ok(result.member, result.features) };
@@ -161,8 +163,9 @@ app.http("removeMember", {
     const requestId = newRequestId();
     try {
       const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
       await removeMember(
-        { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId: request.params.userId ?? "" },
+        { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId },
         { familyRepo, userRepo, deviceRepo, usageRepo, clock },
       );
       return { status: 204 };
