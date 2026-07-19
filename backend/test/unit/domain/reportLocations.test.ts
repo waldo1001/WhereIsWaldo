@@ -1,0 +1,658 @@
+import { describe, expect, it } from "vitest";
+import { reportLocations } from "../../../src/domain/location/reportLocations";
+import { getFeatures } from "../../../src/domain/plan";
+import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryLastKnownRepo } from "../../fakes/inMemoryLastKnownRepo";
+import { InMemoryIdempotencyRepo } from "../../fakes/inMemoryIdempotencyRepo";
+import { InMemoryHistoryStore } from "../../fakes/inMemoryHistoryStore";
+import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
+import { InMemoryGeofenceConfigRepo } from "../../fakes/inMemoryGeofenceConfigRepo";
+import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
+import { FixedClock } from "../../fakes/fixedClock";
+import { expectAppError } from "../../support/expectAppError";
+import type { DeviceRecord } from "../../../src/ports/repositories";
+
+const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
+const DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
+const OTHER_DEVICE_ID = "4f1a3b0d-7c2e-5f9a-ab3c-8d6e5f4a3b2c";
+const USER_ID = "u1";
+const NOW = "2026-07-19T09:10:00Z";
+
+function buildDeps() {
+  const entitlementsRepo = new InMemoryEntitlementsRepo();
+  entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
+  return {
+    deviceRepo: new InMemoryDeviceRepo(),
+    lastKnownRepo: new InMemoryLastKnownRepo(),
+    idempotencyRepo: new InMemoryIdempotencyRepo(),
+    historyStore: new InMemoryHistoryStore(),
+    usageRepo: new InMemoryUsageRepo(),
+    geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
+    entitlementsRepo,
+    clock: new FixedClock(new Date(NOW)),
+  };
+}
+
+function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<DeviceRecord> = {}): void {
+  deps.deviceRepo.seed(FAMILY_ID, {
+    deviceId: DEVICE_ID,
+    ownerUserId: USER_ID,
+    platform: "android",
+    model: "Pixel 8",
+    appVersion: "1.0.0",
+    deviceName: "Pixel 8",
+    pushInvalid: false,
+    syncIntervalMinutes: 15,
+    trackingEnabled: true,
+    registeredAt: "2026-07-01T00:00:00Z",
+    lastSeenAt: "2026-07-01T00:00:00Z",
+    ...overrides,
+  });
+}
+
+function fix(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    fixId: "a1e2b3c4-0000-4000-8000-000000000001",
+    recordedAt: "2026-07-19T09:00:00Z",
+    lat: 51.0543,
+    lon: 3.7174,
+    accuracyM: 12.5,
+    batteryPct: 78,
+    source: "periodic",
+    ...overrides,
+  };
+}
+
+function baseInput(overrides: Record<string, unknown> = {}) {
+  return {
+    uid: USER_ID,
+    familyId: FAMILY_ID as string | null,
+    deviceId: DEVICE_ID as string | null,
+    body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes: [fix()] },
+    ...overrides,
+  };
+}
+
+describe("domain/location/reportLocations", () => {
+  it("accepts a valid batch: accepted count, duplicates 0, lastKnownUpdated true, piggyback fields", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    const result = await reportLocations(
+      {
+        uid: USER_ID,
+        familyId: FAMILY_ID,
+        deviceId: DEVICE_ID,
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", recordedAt: "2026-07-19T09:00:00Z" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:05:00Z" }),
+          ],
+        },
+      },
+      deps,
+    );
+
+    expect(result.accepted).toBe(2);
+    expect(result.duplicates).toBe(0);
+    expect(result.lastKnownUpdated).toBe(true);
+    expect(result.deviceSettings).toEqual({ syncIntervalMinutes: 15, trackingEnabled: true });
+    expect(result.geofenceEtag).toBe("0");
+    expect(result.features).toEqual(getFeatures("free"));
+  });
+
+  it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
+    const deviceRepo = new InMemoryDeviceRepo();
+    deviceRepo.seed(FAMILY_ID, {
+      deviceId: DEVICE_ID,
+      ownerUserId: USER_ID,
+      platform: "android",
+      model: "Pixel 8",
+      appVersion: "1.0.0",
+      deviceName: "Pixel 8",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
+    const deps = {
+      deviceRepo,
+      lastKnownRepo: new InMemoryLastKnownRepo(),
+      idempotencyRepo: new InMemoryIdempotencyRepo(),
+      historyStore: new InMemoryHistoryStore(),
+      usageRepo: new InMemoryUsageRepo(),
+      geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
+      entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
+      clock: new FixedClock(new Date(NOW)),
+    };
+
+    await expectAppError(reportLocations(baseInput(), deps), "INTERNAL_ERROR");
+  });
+
+  it("batch idempotency: replaying the same batchId returns accepted 0, duplicates n, and performs no further writes", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const body = {
+      batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+      fixes: [fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" })],
+    };
+
+    const first = await reportLocations({ uid: USER_ID, familyId: FAMILY_ID, deviceId: DEVICE_ID, body }, deps);
+    expect(first.accepted).toBe(1);
+
+    const replay = await reportLocations({ uid: USER_ID, familyId: FAMILY_ID, deviceId: DEVICE_ID, body }, deps);
+
+    expect(replay.accepted).toBe(0);
+    expect(replay.duplicates).toBe(1);
+    expect(replay.lastKnownUpdated).toBe(false);
+    expect(replay.deviceSettings).toEqual({ syncIntervalMinutes: 15, trackingEnabled: true });
+    expect(replay.geofenceEtag).toBe("0");
+    expect(replay.features).toEqual(getFeatures("free"));
+
+    expect(deps.historyStore.fixes.length).toBe(1); // no second append
+    expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(1);
+    expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(1);
+    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
+  });
+
+  it("stores the batch's actual receivedAt and fixCount in the idempotency marker meta", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const body = {
+      batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+      fixes: [
+        fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" }),
+        fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:01:00Z" }),
+      ],
+    };
+
+    await reportLocations({ uid: USER_ID, familyId: FAMILY_ID, deviceId: DEVICE_ID, body }, deps);
+
+    expect(deps.idempotencyRepo.getBatchMarkerMeta(DEVICE_ID, body.batchId)).toEqual({
+      receivedAt: new Date(NOW).toISOString(),
+      fixCount: 2,
+    });
+  });
+
+  it("writes no idempotency marker for a rejected (validation-failed) batch", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const batchId = "b7f2c1d0-0000-4000-8000-000000000099";
+
+    await expectAppError(
+      reportLocations(
+        { uid: USER_ID, familyId: FAMILY_ID, deviceId: DEVICE_ID, body: { batchId, fixes: [] } },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+    );
+
+    // No marker was written by the failed attempt -> a fresh insert for the same id still succeeds.
+    const inserted = await deps.idempotencyRepo.tryInsertBatchMarker(DEVICE_ID, batchId, {
+      receivedAt: NOW,
+      fixCount: 0,
+    });
+    expect(inserted).toBe(true);
+  });
+
+  it("throws VALIDATION_FAILED for an empty batch", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(
+      reportLocations(baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes: [] } }), deps),
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("throws LOCATION_BATCH_TOO_LARGE with details.max: 100 for a batch of 101 fixes", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const fixes = Array.from({ length: 101 }, (_, i) =>
+      fix({ fixId: `a1e2b3c4-0000-4000-8000-${String(i).padStart(12, "0")}` }),
+    );
+
+    await expectAppError(
+      reportLocations(
+        baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes } }),
+        deps,
+      ),
+      "LOCATION_BATCH_TOO_LARGE",
+      { max: 100 },
+    );
+  });
+
+  it("accepts a batch of exactly 100 fixes (the boundary is > 100, not >= 100)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const fixes = Array.from({ length: 100 }, (_, i) =>
+      fix({ fixId: `a1e2b3c4-0000-4000-8000-${String(i).padStart(12, "0")}` }),
+    );
+
+    const result = await reportLocations(
+      baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes } }),
+      deps,
+    );
+
+    expect(result.accepted).toBe(100);
+  });
+
+  it("throws VALIDATION_FAILED (not a crash) when the body is null", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(reportLocations(baseInput({ body: null }), deps), "VALIDATION_FAILED");
+  });
+
+  it("throws VALIDATION_FAILED (not a crash) when the body is undefined", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(reportLocations(baseInput({ body: undefined }), deps), "VALIDATION_FAILED");
+  });
+
+  it("throws VALIDATION_FAILED (not LOCATION_BATCH_TOO_LARGE) when fixes is not an array", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    // A string has a `.length` property but is not an array — must not satisfy the size check.
+    const longString = "x".repeat(101);
+
+    await expectAppError(
+      reportLocations(
+        baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes: longString } }),
+        deps,
+      ),
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("throws VALIDATION_FAILED with details.fields listing the offending recordedAt for clock skew (>5 min future)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    // NOW = 2026-07-19T09:10:00Z; +5min = 09:15:00Z. 09:16:00Z is 1 min past the limit.
+    const fixes = [
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", recordedAt: "2026-07-19T09:00:00Z" }),
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:16:00Z" }),
+    ];
+
+    await expectAppError(
+      reportLocations(baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes } }), deps),
+      "VALIDATION_FAILED",
+      { fields: ["fixes[1].recordedAt"] },
+    );
+  });
+
+  it("accepts a fix recordedAt exactly 5 minutes in the future (boundary: only STRICTLY more than 5 min fails)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    // NOW = 09:10:00Z; +5min exactly = 09:15:00Z.
+    const result = await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [fix({ recordedAt: "2026-07-19T09:15:00Z" })],
+        },
+      }),
+      deps,
+    );
+
+    expect(result.accepted).toBe(1);
+  });
+
+  it("accepts a fix recordedAt a couple minutes in the future (within the 5-minute tolerance)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    // NOW = 09:10:00Z; +2min = 09:12:00Z, comfortably inside the 5-minute tolerance.
+    const result = await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [fix({ recordedAt: "2026-07-19T09:12:00Z" })],
+        },
+      }),
+      deps,
+    );
+
+    expect(result.accepted).toBe(1);
+  });
+
+  it("throws DEVICE_NOT_FOUND when X-Device-Id header is missing", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expect(reportLocations(baseInput({ deviceId: null }), deps)).rejects.toMatchObject({
+      code: "DEVICE_NOT_FOUND",
+      message: "X-Device-Id header is required",
+    });
+  });
+
+  it("throws DEVICE_NOT_FOUND when the device does not exist", async () => {
+    const deps = buildDeps();
+    // no device seeded at all
+
+    await expectAppError(reportLocations(baseInput(), deps), "DEVICE_NOT_FOUND");
+  });
+
+  it("throws DEVICE_NOT_FOUND when the device is registered to a different user", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, { ownerUserId: "someone-else" });
+
+    await expectAppError(reportLocations(baseInput(), deps), "DEVICE_NOT_FOUND");
+  });
+
+  it("throws TRACKING_PAUSED with error.details.deviceSettings when the device is paused", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, { trackingEnabled: false, syncIntervalMinutes: 30 });
+
+    await expectAppError(reportLocations(baseInput(), deps), "TRACKING_PAUSED", {
+      deviceSettings: { syncIntervalMinutes: 30, trackingEnabled: false },
+    });
+  });
+
+  it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(reportLocations(baseInput({ familyId: null }), deps), "FAMILY_NOT_FOUND");
+  });
+
+  it("last-known: does not update when the batch's newest fix is not newer than the stored one", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    deps.lastKnownRepo.seed(FAMILY_ID, {
+      deviceId: DEVICE_ID,
+      lat: 51.0,
+      lon: 3.7,
+      accuracyM: 10,
+      batteryPct: 90,
+      recordedAt: "2026-07-19T09:05:00Z",
+      receivedAt: "2026-07-19T09:05:02Z",
+      source: "periodic",
+    });
+
+    const result = await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [fix({ recordedAt: "2026-07-19T09:00:00Z" })], // older than stored 09:05:00Z
+        },
+      }),
+      deps,
+    );
+
+    expect(result.lastKnownUpdated).toBe(false);
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect(stored?.lat).toBe(51.0); // unchanged
+  });
+
+  it("last-known: picks the batch's newest fix by recordedAt, not the last array element", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({
+              fixId: "a1e2b3c4-0000-4000-8000-000000000001",
+              recordedAt: "2026-07-19T09:05:00Z", // newest, but listed FIRST
+              lat: 52.0,
+            }),
+            fix({
+              fixId: "a1e2b3c4-0000-4000-8000-000000000002",
+              recordedAt: "2026-07-19T09:00:00Z", // older, listed last
+              lat: 51.0,
+            }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect(stored?.lat).toBe(52.0);
+    expect(stored?.recordedAt).toBe("2026-07-19T09:05:00Z");
+  });
+
+  it("last-known: replaces the running newest mid-batch when a later array element is actually newer", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", recordedAt: "2026-07-19T09:00:00Z", lat: 10 }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:05:00Z", lat: 20 }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000003", recordedAt: "2026-07-19T09:02:00Z", lat: 30 }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect(stored?.lat).toBe(20); // the middle fix (09:05) is the newest of the three
+  });
+
+  it("last-known: on a recordedAt tie, the earlier array element wins (strict > , not >=)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", recordedAt: "2026-07-19T09:00:00Z", lat: 10 }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:00:00Z", lat: 20 }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect(stored?.lat).toBe(10); // first element kept; a `>=` bug would let the second replace it
+  });
+
+  it("last-known: carries altitudeM/speedMps/bearingDeg from the newest fix when present", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [fix({ altitudeM: 8.0, speedMps: 1.5, bearingDeg: 90 })],
+        },
+      }),
+      deps,
+    );
+
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect(stored?.altitudeM).toBe(8.0);
+    expect(stored?.speedMps).toBe(1.5);
+    expect(stored?.bearingDeg).toBe(90);
+  });
+
+  it("last-known: omits altitudeM/speedMps/bearingDeg when absent from the newest fix (not null)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(baseInput(), deps);
+
+    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    expect("altitudeM" in (stored as object)).toBe(false);
+    expect("speedMps" in (stored as object)).toBe(false);
+    expect("bearingDeg" in (stored as object)).toBe(false);
+  });
+
+  it("accepts every valid fix source: periodic, locate, geofence, manual", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    const result = await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", source: "periodic" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", source: "locate" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000003", source: "geofence" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000004", source: "manual" }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    expect(result.accepted).toBe(4);
+  });
+
+  it("appends one history fix per accepted fix, omitting unset optional fields (not null)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" }), // no optionals
+            fix({
+              fixId: "a1e2b3c4-0000-4000-8000-000000000002",
+              recordedAt: "2026-07-19T09:01:00Z",
+              altitudeM: 8.0,
+              speedMps: 1.5,
+              bearingDeg: 90,
+            }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    expect(deps.historyStore.fixes.length).toBe(2);
+    const [withoutOptionals, withOptionals] = deps.historyStore.fixes;
+    expect(withoutOptionals!.familyId).toBe(FAMILY_ID);
+    expect(withoutOptionals!.userId).toBe(USER_ID);
+    expect(withoutOptionals!.deviceId).toBe(DEVICE_ID);
+    expect("altitudeM" in withoutOptionals!.fix).toBe(false);
+    expect("speedMps" in withoutOptionals!.fix).toBe(false);
+    expect("bearingDeg" in withoutOptionals!.fix).toBe(false);
+    expect(withoutOptionals!.fix.receivedAt).toBe(new Date(NOW).toISOString());
+
+    expect(withOptionals!.fix.altitudeM).toBe(8.0);
+    expect(withOptionals!.fix.speedMps).toBe(1.5);
+    expect(withOptionals!.fix.bearingDeg).toBe(90);
+  });
+
+  it("increments apiCalls, locationBatches, and fixes usage on an accepted batch", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await reportLocations(
+      baseInput({
+        body: {
+          batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+          fixes: [
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:01:00Z" }),
+            fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000003", recordedAt: "2026-07-19T09:02:00Z" }),
+          ],
+        },
+      }),
+      deps,
+    );
+
+    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
+    expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(1);
+    expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(3);
+  });
+
+  it("never increments usage for a rejected (validation-failed) batch", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(
+      reportLocations(baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes: [] } }), deps),
+      "VALIDATION_FAILED",
+    );
+
+    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(0);
+    expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(0);
+    expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(0);
+  });
+
+  it("reflects the family's current geofenceEtag (piggyback, §5.1)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    deps.geofenceConfigRepo.seed(FAMILY_ID, '"0x8DC5F3A9B2C1D40"');
+
+    const result = await reportLocations(baseInput(), deps);
+
+    expect(result.geofenceEtag).toBe('"0x8DC5F3A9B2C1D40"');
+  });
+
+  it("throws VALIDATION_FAILED with details.fields: [\"lat\"] for an out-of-range latitude", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(
+      reportLocations(
+        baseInput({
+          body: {
+            batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+            fixes: [fix({ lat: 95 })],
+          },
+        }),
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["fixes[0].lat"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED with details.fields: [\"source\"] for an invalid source", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+
+    await expectAppError(
+      reportLocations(
+        baseInput({
+          body: {
+            batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+            fixes: [fix({ source: "bogus" })],
+          },
+        }),
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["fixes[0].source"] },
+    );
+  });
+
+  it("uses bracket-notation array indices for a deep validation error (kills the validate.ts path-join mutant)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps);
+    const fixes = [
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" }),
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:01:00Z" }),
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000003", recordedAt: "2026-07-19T09:02:00Z" }),
+      fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000004", recordedAt: "not-a-valid-datetime" }),
+    ];
+
+    await expectAppError(
+      reportLocations(
+        baseInput({ body: { batchId: "b7f2c1d0-0000-4000-8000-000000000001", fixes } }),
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["fixes[3].recordedAt"] },
+    );
+  });
+});

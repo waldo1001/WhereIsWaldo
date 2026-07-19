@@ -4,10 +4,28 @@
 import { z } from "zod";
 import { AppError } from "./errors";
 
+// specs/001 §5.1/§10 — array indices use BRACKET notation (e.g. "fixes[3].recordedAt"),
+// not dot-joined ("fixes.3.recordedAt"): a numeric segment appends as `[N]` with no
+// leading dot; a named segment appends as `.name`, except when it's the first segment.
+function formatFieldPath(path: (string | number)[]): string {
+  if (path.length === 0) return "(root)";
+  let formatted = "";
+  path.forEach((segment, index) => {
+    if (typeof segment === "number") {
+      formatted += `[${segment}]`;
+    } else if (index === 0) {
+      formatted += segment;
+    } else {
+      formatted += `.${segment}`;
+    }
+  });
+  return formatted;
+}
+
 export function parseOrThrow<S extends z.ZodTypeAny>(schema: S, input: unknown): z.infer<S> {
   const result = schema.safeParse(input);
   if (!result.success) {
-    const fields = result.error.issues.map((issue) => (issue.path.length ? issue.path.join(".") : "(root)"));
+    const fields = result.error.issues.map((issue) => formatFieldPath(issue.path as (string | number)[]));
     throw new AppError("VALIDATION_FAILED", "request failed schema validation", { fields });
   }
   return result.data;
@@ -31,3 +49,27 @@ export const registerDeviceRequestSchema = z.object({
   deviceName: z.string().min(1).max(40).optional(),
 });
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+
+// specs/001 §5.1 / §1.4 — one location fix. `fixes` array length (1-100) is enforced by
+// the domain (LOCATION_BATCH_TOO_LARGE / VALIDATION_FAILED are distinct codes, §10), not here.
+export const locationFixSchema = z.object({
+  fixId: z.string().uuid(),
+  recordedAt: z.string().datetime(),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  accuracyM: z.number().min(0).max(10000),
+  altitudeM: z.number().optional(),
+  speedMps: z.number().min(0).optional(),
+  bearingDeg: z.number().min(0).lt(360).optional(),
+  batteryPct: z.number().int().min(0).max(100),
+  source: z.enum(["periodic", "locate", "geofence", "manual"]),
+});
+export type LocationFixRequest = z.infer<typeof locationFixSchema>;
+
+// specs/001 §5.1 — batchId + at least one fix (empty batch -> VALIDATION_FAILED here;
+// the >100 cap is a separate pre-check in the domain, see above).
+export const reportLocationsRequestSchema = z.object({
+  batchId: z.string().uuid(),
+  fixes: z.array(locationFixSchema).min(1),
+});
+export type ReportLocationsRequest = z.infer<typeof reportLocationsRequestSchema>;
