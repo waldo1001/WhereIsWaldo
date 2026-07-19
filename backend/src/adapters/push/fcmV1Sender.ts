@@ -5,9 +5,9 @@
 // (src/adapters/**) and has no unit tests (thin integration surface, per backend/README.md) —
 // the credential is read from the environment at call time, never logged, never committed.
 //
-// B4 scope is the §8.1 LOCATE_REQUEST message only; §8.2-§8.4 (GEOFENCE_EVENT,
-// SETTINGS_CHANGED, GEOFENCE_CONFIG_CHANGED) are later tasks (B5) and are intentionally not
-// built here — see buildFcmBody below.
+// B4 built §8.1 LOCATE_REQUEST. B5 adds §8.2 GEOFENCE_EVENT (notification + data) and §8.4
+// GEOFENCE_CONFIG_CHANGED (data-only); §8.3 SETTINGS_CHANGED remains out of scope — see
+// buildFcmBody below.
 
 import { importPKCS8, SignJWT } from "jose";
 import type { PushMessage, PushSendOutcome, PushSender } from "../../ports/pushSender";
@@ -100,12 +100,50 @@ function buildLocateRequestBody(message: PushMessage): Record<string, unknown> {
   };
 }
 
+function buildGeofenceEventBody(message: PushMessage): Record<string, unknown> {
+  // specs/001 §8.2 — notification + data: server-composed English title, no body (the
+  // notification's own timestamp conveys the time in the recipient's locale/zone).
+  // mutable-content:1 lets an iOS Notification Service Extension re-render the alert locally.
+  return {
+    message: {
+      token: message.token,
+      notification: { title: message.notificationTitle },
+      android: { priority: "normal" },
+      apns: {
+        headers: { "apns-priority": "5", "apns-push-type": "alert" },
+        payload: { aps: { "mutable-content": 1 } },
+      },
+      data: message.data,
+    },
+  };
+}
+
+function buildGeofenceConfigChangedBody(message: PushMessage): Record<string, unknown> {
+  // specs/001 §8.4 — data-only, normal priority; device responds with GET /geofences
+  // (If-None-Match) and re-registers platform geofences.
+  return {
+    message: {
+      token: message.token,
+      android: { priority: "normal" },
+      apns: {
+        headers: { "apns-priority": "5", "apns-push-type": "background" },
+        payload: { aps: { "content-available": 1 } },
+      },
+      data: message.data,
+    },
+  };
+}
+
 function buildFcmBody(message: PushMessage): Record<string, unknown> {
   switch (message.type) {
     case "LOCATE_REQUEST":
       return buildLocateRequestBody(message);
+    case "GEOFENCE_EVENT":
+      return buildGeofenceEventBody(message);
+    case "GEOFENCE_CONFIG_CHANGED":
+      return buildGeofenceConfigChangedBody(message);
     default:
-      throw new Error(`fcmV1Sender: push message type "${message.type}" is out of B4 scope`);
+      throw new Error(`fcmV1Sender: push message type "${message.type}" is out of B4/B5 scope`);
   }
 }
 

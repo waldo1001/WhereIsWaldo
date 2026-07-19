@@ -162,3 +162,47 @@ export const geofenceEventHistoryQuerySchema = z.object({
   cursor: z.string().min(1).optional(),
 });
 export type GeofenceEventHistoryQuery = z.infer<typeof geofenceEventHistoryQuerySchema>;
+
+// specs/001 §1.4 — geofenceId is a client-chosen slug `gf_[a-z0-9-]{1,30}`, unique within
+// the family config (uniqueness is a domain-level check, not expressible per-field here).
+const GEOFENCE_ID_REGEX = /^gf_[a-z0-9-]{1,30}$/;
+
+// specs/001 §7.2 — one geofence entry of the PUT /geofences full-document replace body.
+// radiusM 100-5000 (platform accuracy floor / sanity cap); name 1-50; icon free string <=30.
+export const geofenceEntryRequestSchema = z.object({
+  geofenceId: z.string().regex(GEOFENCE_ID_REGEX),
+  name: z.string().min(1).max(50),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  radiusM: z.number().min(100).max(5000),
+  icon: z.string().max(30),
+  notifyOnEnter: z.boolean(),
+  notifyOnExit: z.boolean(),
+});
+export type GeofenceEntryRequest = z.infer<typeof geofenceEntryRequestSchema>;
+
+// specs/001 §7.2 — the geofences array only; version/ETag are server-managed. maxGeofences
+// (a plan limit) and geofenceId-uniqueness are domain-level checks (both need context this
+// schema doesn't have), not enforced here.
+export const replaceGeofencesRequestSchema = z.object({
+  geofences: z.array(geofenceEntryRequestSchema),
+});
+export type ReplaceGeofencesRequest = z.infer<typeof replaceGeofencesRequestSchema>;
+
+// specs/001 §7.3 — one reported geofence transition. eventId/geofenceId format match the
+// same conventions as §1.4; transition is "enter" | "exit".
+export const geofenceEventRequestSchema = z.object({
+  eventId: z.string().uuid(),
+  geofenceId: z.string().regex(GEOFENCE_ID_REGEX),
+  transition: z.enum(["enter", "exit"]),
+  recordedAt: z.string().datetime(),
+});
+export type GeofenceEventRequest = z.infer<typeof geofenceEventRequestSchema>;
+
+// specs/001 §7.3 — batch of 1-20 events. Unlike §5.1's fixes batch, BOTH the empty case and
+// the over-limit case map to the same VALIDATION_FAILED code (no distinct "too large" code
+// exists for this endpoint, §10), so a single zod min/max suffices without a domain pre-check.
+export const reportGeofenceEventsRequestSchema = z.object({
+  events: z.array(geofenceEventRequestSchema).min(1).max(20),
+});
+export type ReportGeofenceEventsRequest = z.infer<typeof reportGeofenceEventsRequestSchema>;
