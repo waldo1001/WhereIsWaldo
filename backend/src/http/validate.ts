@@ -117,3 +117,22 @@ export const memberUserIdParamSchema = z.object({
     .regex(ALLOWED_TABLE_KEY_CHARS, "userId contains characters forbidden in a Table Storage key"),
 });
 export type MemberUserIdParam = z.infer<typeof memberUserIdParamSchema>;
+
+// specs/001 §6.1 — create locate request: exactly one of targetUserId | targetDeviceId.
+// No custom .refine() message: parseOrThrow only ever surfaces `issue.path` (see
+// formatFieldPath above), never `issue.message`, so a message here would be dead weight.
+export const createLocateRequestRequestSchema = z
+  .object({
+    targetUserId: z.string().min(1).optional(),
+    targetDeviceId: z.string().uuid().optional(),
+  })
+  .refine(
+    (body) => (body.targetUserId !== undefined ? 1 : 0) + (body.targetDeviceId !== undefined ? 1 : 0) === 1,
+  );
+export type CreateLocateRequestRequest = z.infer<typeof createLocateRequestRequestSchema>;
+
+// specs/001 §6.3 — fulfill locate request: one fix, same shape as §5.1, but `source` MUST be "locate".
+export const fulfillLocateRequestRequestSchema = z.object({
+  fix: locationFixSchema.extend({ source: z.literal("locate") }),
+});
+export type FulfillLocateRequestRequest = z.infer<typeof fulfillLocateRequestRequestSchema>;
