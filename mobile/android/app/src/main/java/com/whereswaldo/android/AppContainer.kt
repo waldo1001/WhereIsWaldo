@@ -15,6 +15,8 @@ import com.whereswaldo.android.push.PushTokenProvider
 import com.whereswaldo.android.push.StubPushTokenProvider
 import com.whereswaldo.android.queue.FixQueueStore
 import com.whereswaldo.android.queue.InMemoryFixQueueStore
+import com.whereswaldo.android.ui.map.MapRenderer
+import com.whereswaldo.android.ui.map.PlaceholderMapRenderer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -35,6 +37,7 @@ class AppContainer(context: Context) {
         baseUrl = BuildConfig.BASE_URL,
         authModeValue = BuildConfig.AUTH_MODE,
         firebaseProjectId = BuildConfig.FIREBASE_PROJECT_ID,
+        mapsApiKey = BuildConfig.MAPS_API_KEY,
     )
 
     val authProvider: AuthProvider =
@@ -53,6 +56,10 @@ class AppContainer(context: Context) {
     /** Offline fix-queue (specs/003 §10) — not yet drained by anything; `LocationSyncWorker`
      * wiring is A2/H1 scope (§10.5). */
     val fixQueueStore: FixQueueStore = InMemoryFixQueueStore()
+
+    /** A2's live-map tile renderer seam (`ui/map/MapRenderer.kt`) — [PlaceholderMapRenderer] is
+     * the only implementation until H1 provisions a real Maps API key (`appConfig.mapsApiKey`). */
+    val mapRenderer: MapRenderer = PlaceholderMapRenderer()
 
     init {
         // 001 §4.1 / 000 §O4: re-POST /devices on every push-token refresh. Fixed wiring point

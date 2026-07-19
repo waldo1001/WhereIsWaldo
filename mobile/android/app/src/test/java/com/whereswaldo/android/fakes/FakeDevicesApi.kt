@@ -8,10 +8,13 @@ import com.whereswaldo.android.network.dto.UpdateDeviceRequestDto
 import com.whereswaldo.android.network.ports.DevicesApi
 
 /** Test fake — mirrors the backend's `test/fakes/` convention (backend/README.md). Records every
- * [registerDevice] call for assertion; `listDevices`/`updateDevice` are not exercised by A1's
- * tests and throw if accidentally called. */
+ * [registerDevice] call for assertion (A1); A2 adds scriptable [listDevicesResult] /
+ * [updateDeviceResult] for `SettingsStateHolderTest`. */
 class FakeDevicesApi : DevicesApi {
     val registerDeviceCalls = mutableListOf<RegisterDeviceRequestDto>()
+    val updateDeviceCalls = mutableListOf<Pair<String, UpdateDeviceRequestDto>>()
+    var listDevicesCallCount = 0
+        private set
 
     var resultToReturn: ApiResult<DeviceDto> = ApiResult.Success(
         DeviceDto(
@@ -28,14 +31,38 @@ class FakeDevicesApi : DevicesApi {
         features = null,
     )
 
+    var listDevicesResult: ApiResult<ListDevicesResponseDto> = ApiResult.Success(
+        ListDevicesResponseDto(devices = emptyList()),
+        features = defaultFeatures(),
+    )
+
+    var updateDeviceResult: ApiResult<DeviceDto> = ApiResult.Success(
+        DeviceDto(
+            deviceId = "device-1",
+            ownerUserId = "uid-test",
+            platform = "android",
+            deviceName = "Pixel 8",
+            model = "Pixel 8",
+            appVersion = "1.0.0",
+            syncIntervalMinutes = 30,
+            trackingEnabled = false,
+            pushInvalid = false,
+        ),
+        features = defaultFeatures(),
+    )
+
     override suspend fun registerDevice(request: RegisterDeviceRequestDto): ApiResult<DeviceDto> {
         registerDeviceCalls.add(request)
         return resultToReturn
     }
 
-    override suspend fun listDevices(): ApiResult<ListDevicesResponseDto> =
-        throw UnsupportedOperationException("not exercised by A1 tests")
+    override suspend fun listDevices(): ApiResult<ListDevicesResponseDto> {
+        listDevicesCallCount++
+        return listDevicesResult
+    }
 
-    override suspend fun updateDevice(deviceId: String, request: UpdateDeviceRequestDto): ApiResult<DeviceDto> =
-        throw UnsupportedOperationException("not exercised by A1 tests")
+    override suspend fun updateDevice(deviceId: String, request: UpdateDeviceRequestDto): ApiResult<DeviceDto> {
+        updateDeviceCalls.add(deviceId to request)
+        return updateDeviceResult
+    }
 }

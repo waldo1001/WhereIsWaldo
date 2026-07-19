@@ -1,0 +1,23 @@
+package com.whereswaldo.android.ui.map
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+
+/**
+ * Abstraction over the actual map-tile view (A2 task brief: "put the actual map-tile view behind
+ * a `MapRenderer` interface with a stub/placeholder implementation now"). A real tile renderer
+ * (Google Maps SDK) needs an API key that only exists once H1 (`docs/azure-setup.md`) provisions
+ * one — see `config/AppConfig.kt`'s `mapsApiKey`, sourced from a gitignored/config-injected
+ * Gradle property, never committed (docs/security-review-checklist.md §5). [PlaceholderMapRenderer]
+ * is the only implementation today; a real one drops in later behind this same interface with no
+ * call-site change, the same seam every other H1-waived dependency in this codebase uses
+ * ([com.whereswaldo.android.auth.AuthProvider], [com.whereswaldo.android.push.PushTokenProvider]).
+ *
+ * Markers and the roster list are always rendered through `ui/designsystem` components
+ * ([com.whereswaldo.android.ui.designsystem.components.WaldoMapMarkerBubble]) regardless of which
+ * [MapRenderer] is installed, so the map stays design-swappable even after a real tile SDK lands.
+ */
+interface MapRenderer {
+    @Composable
+    fun Render(members: List<RosterMemberUi>, modifier: Modifier)
+}

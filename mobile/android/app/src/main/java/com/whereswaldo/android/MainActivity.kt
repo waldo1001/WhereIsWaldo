@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
                     factory = HomeViewModelFactory(container.authProvider, container.deviceRegistrar),
                 )
                 WaldoNavHost(
+                    container = container,
                     homeViewModel = homeViewModel,
                     onSignIn = {
                         // Dev-only: AUTH_MODE=insecure-local wires a DevAuthProvider; there is
