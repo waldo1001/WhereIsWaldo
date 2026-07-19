@@ -15,16 +15,15 @@ mobile/ios/
 ├── WaldoKit/                  ← Swift Package, iOS 16 + macOS 13 platforms
 │   ├── Package.swift
 │   ├── Sources/WaldoKit/      ← ALL logic + design system (no app lifecycle code)
-│   └── Tests/WaldoKitTests/   ← XCTest, runs via `swift test` on any host (incl. this macOS
-│                                  session, headlessly — no simulator needed)
-├── WheresWaldo/                ← thin SwiftUI app-target sources (App.swift, RootView, Info.plist,
-│                                  entitlements) — App lifecycle + environment wiring ONLY, zero
-│                                  business logic; depends on WaldoKit as a local package
-└── WheresWaldo.xcodeproj/      ← Xcode project wrapping the above; built by Xcode/CI, not by this
-                                   session (no Xcode.app / simulator available in this environment —
-                                   only Command Line Tools; `xcodebuild` fails with
-                                   "requires Xcode" here). NOT part of this session's verification.
+│   └── Tests/WaldoKitTests/   ← Swift Testing (see §9), runs via `swift test` on any host
+│                                  (incl. this macOS session, headlessly — no simulator needed)
+└── WheresWaldo/                ← thin SwiftUI app-target SOURCE FILES (WheresWaldoApp.swift,
+                                   RootView.swift, Info.plist, WheresWaldo.entitlements) — App
+                                   lifecycle + environment wiring ONLY, zero business logic;
+                                   depends on WaldoKit as a local package.
 ```
+
+**No `.xcodeproj` is committed by this session.** Wrapping the sources above into an actual Xcode project is a mechanical, low-risk step *in Xcode* (File → New → Project → App, point sources at `WheresWaldo/`, add `WaldoKit` as a local Swift Package dependency) — but hand-authoring a `project.pbxproj` in a text editor, with no Xcode available to validate the result (this session has Command Line Tools only; `xcodebuild` fails with "requires Xcode" here, and there is no tool here that can validate a `.pbxproj`'s object graph beyond plist syntax), risks shipping a project file that looks plausible but doesn't actually open — worse than no project file at all. The source files themselves ARE verified: they type-check cleanly against the real built `WaldoKit` module (`swiftc -typecheck` against `WaldoKit`'s `.build` products, this session). Creating the `.xcodeproj` is deferred to whichever session first has real Xcode (H1-era or later).
 
 **Rule (MUST):** any line of business logic, networking, persistence, or design-system code lives in `WaldoKit`. The app target MAY contain only: `@main App` struct, scene/window wiring, `Info.plist`/entitlements, and passing the OS lifecycle (scene phase, push-registration callbacks, `BGTaskScheduler` registration) into `WaldoKit` types through their public protocols. This split is what makes `swift build`/`swift test` run green on a plain macOS host with no Xcode project involved — the thing this session can actually verify.
 

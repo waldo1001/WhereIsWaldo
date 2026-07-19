@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- FCM/APNs push (specs/001 §8). "development" until a distribution build; Xcode manages this
+	     automatically per build configuration once the project exists. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!--
+	  PENDING (specs/000 §O1, specs/004 §7) — a human/Apple-account action, not blocking I1/I2:
+	  <key>com.apple.developer.location.push</key>
+	  <true/>
+	  Add this only once Apple grants the entitlement (Apple Developer Program enrollment required
+	  first). Adding it before the entitlement is granted breaks code signing.
+	-->
+</dict>
+</plist>
