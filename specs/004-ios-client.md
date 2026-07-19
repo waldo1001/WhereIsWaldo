@@ -108,7 +108,7 @@ Injected via a custom `EnvironmentKey` (`\.theme`), defaulting to `.light`; the 
 
 - Reads `@Environment(\.theme)` only — **MUST NOT** declare a literal `Color(...)`, `.font(.system(size:))`, or hardcoded point size.
 - Takes content/state via parameters (strings, an enum for chip status, a boolean for loading, etc.) — zero knowledge of view models, networking, or navigation.
-- Ships a light + dark `#Preview` pair (compiles under Xcode later; not required for `swift test`, which does not build previews).
+- SHOULD ship a light + dark `#Preview` pair under Xcode. **Not present in this session's committed source**: `#Preview` needs the `PreviewsMacros` compiler plugin, which ships only with `Xcode.app` — this session has Command Line Tools only, where even an empty `#Preview {}` fails to compile, and the package MUST build clean here. Adding previews back is a trivial, non-blocking follow-up once a real Xcode toolchain is available.
 
 ### 2.4 Screens
 
