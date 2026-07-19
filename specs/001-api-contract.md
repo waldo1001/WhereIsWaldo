@@ -198,7 +198,7 @@ A parent MUST NOT demote themselves if they are the last parent (→ `400 VALIDA
 
 ### 4.1 Register / update own device — `POST /devices`
 
-Upsert keyed on `deviceId`. First registration applies defaults (`syncIntervalMinutes: 15`, `trackingEnabled: true`, `deviceName` = `model` when omitted); later calls from the owner update `pushToken`, `locationPushToken`, `appVersion`, `model`, `platform` but MUST NOT reset parent-managed settings (`syncIntervalMinutes`, `trackingEnabled`, `deviceName`).
+Upsert keyed on `deviceId`. First registration applies defaults (`syncIntervalMinutes: 15`, `trackingEnabled: true`, `deviceName` = `model` when omitted); later calls from the owner update `pushToken`, `locationPushToken`, `appVersion`, `model`, `platform` but MUST NOT reset parent-managed settings (`syncIntervalMinutes`, `trackingEnabled`, `deviceName`). **Omitted token fields are left unchanged:** an update that carries no `pushToken`/`locationPushToken` never clears a previously stored one — a token is replaced only by a later call that supplies a new value (a device stays a valid push-to-locate target across a token-less `appVersion`-only re-registration). Any successful registration that *does* supply a fresh token clears `pushInvalid` (§8.5).
 
 Clients MUST call this on: first launch after sign-in, every FCM token refresh, and every app update.
 
