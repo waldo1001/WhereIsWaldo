@@ -24,7 +24,10 @@ export function createTableClient(tableName: string): TableClient {
   const host = new URL(endpoint).hostname;
   if (isLocalEmulatorHost(host)) {
     const credential = new AzureNamedKeyCredential(AZURITE_ACCOUNT_NAME, AZURITE_ACCOUNT_KEY);
-    return new TableClient(endpoint, tableName, credential);
+    // Azurite's local endpoint is plain http:// — recent @azure/core-rest-pipeline
+    // versions refuse non-TLS requests unless explicitly opted in. Only ever applies on
+    // this local-emulator-host branch, never against a real (always-https) Azure account.
+    return new TableClient(endpoint, tableName, credential, { allowInsecureConnection: true });
   }
   return new TableClient(endpoint, tableName, new DefaultAzureCredential());
 }

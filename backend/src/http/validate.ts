@@ -136,3 +136,29 @@ export const fulfillLocateRequestRequestSchema = z.object({
   fix: locationFixSchema.extend({ source: z.literal("locate") }),
 });
 export type FulfillLocateRequestRequest = z.infer<typeof fulfillLocateRequestRequestSchema>;
+
+// specs/001 §5.3 `GET /locations/history` query params. `from`/`to` are required non-empty
+// strings here only — real calendar-date validity, the 31-day span cap, and the
+// historyDays retention window are semantic checks owned entirely by
+// src/domain/history/dateRange.ts (mutation-tested there; keeping a second date-shape
+// regex here would only be a redundant, unobservable-by-tests gate).
+export const locationHistoryQuerySchema = z.object({
+  userId: z.string().min(1),
+  deviceId: z.string().min(1).optional(),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  cursor: z.string().min(1).optional(),
+});
+export type LocationHistoryQuery = z.infer<typeof locationHistoryQuerySchema>;
+
+// specs/001 §7.4 `GET /geofence-events` query params (the history READ; the POST at the
+// same route is owned by B5, registered as a separate app.http handler).
+export const geofenceEventHistoryQuerySchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  userId: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  cursor: z.string().min(1).optional(),
+});
+export type GeofenceEventHistoryQuery = z.infer<typeof geofenceEventHistoryQuerySchema>;

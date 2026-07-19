@@ -22,10 +22,11 @@ src/
                    #   push/fcmV1Sender.ts, auth/firebaseJoseVerifier.ts (jose)
 test/
 ├── fakes/         # InMemory* repos, FixedClock, SeqIdGenerator, FakePushSender, StubTokenVerifier
-└── unit/          # domain/ + http/ tests — MUST run without Azurite, network, or Azure SDKs
+├── unit/          # domain/ + http/ tests — MUST run without Azurite, network, or Azure SDKs
+└── integration/   # storage-adapter tests against a real Azurite (specs/002 §6) — see below
 ```
 
-**Rule:** `src/domain` + `src/http` are pure and mutation-tested. `src/adapters` + `src/functions` are thin integration surface (integration-tested against Azurite in a later session; excluded from mutation).
+**Rule:** `src/domain` + `src/http` are pure and mutation-tested. `src/adapters` + `src/functions` are thin integration surface (integration-tested against Azurite; excluded from mutation).
 
 ## Commands
 
@@ -33,10 +34,28 @@ test/
 |---|---|
 | `npm test` | Unit tests (Vitest). Never needs Azurite. |
 | `npm run test:watch` | The red–green loop |
+| `npm run test:integration` | Storage-adapter integration tests against Azurite (specs/002 §6) — see below |
 | `npm run mutation` | StrykerJS — same gate as CI. Thresholds in `stryker.config.json` (`break: 60`, ratchet-up only). |
 | `npm run build` | `tsc` type-check + emit |
 | `npm run dev:storage` | Azurite (local Table/Blob emulator), state in `.azurite/` |
 | `npm run dev` | Build + `func start` (requires [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) v4) |
+
+## Integration tests (specs/002 §6)
+
+`test/integration/**/*.test.ts` exercise the real adapters (`@azure/data-tables`/`@azure/storage-blob`) against a running Azurite — a separate Vitest project (`vitest.integration.config.ts`), deliberately excluded from the default `npm test` glob so unit tests stay Azurite-free per policy.
+
+```bash
+npm run dev:storage        # start Azurite in one terminal (state in .azurite/, gitignored)
+npm run test:integration   # in another terminal
+```
+
+Tables/containers are created on demand by the tests themselves (Azurite doesn't auto-create them the way the one-time Azure provisioning in `docs/azure-setup.md` does); each test uses a fresh random `familyId`/`deviceId` so parallel test files never collide on shared state.
+
+Current coverage of the 002 §6 checklist:
+
+- ✅ Guarded-update races: `LastKnown` only-newer (`lastKnownRace.test.ts`), `Usage` increment retry (`usageIncrementRace.test.ts`).
+- ✅ Append interleaving (two concurrent writers to one day blob both land; reader sorts), the UTC-midnight day-blob split, cursor round-trip across a day boundary with multi-device merge, and event dedupe/filtering (`historyBlobStore.test.ts`).
+- ⏸ **Deferred, not yet possible on this branch:** invite single-use race (owned by task B3's `InvitesTableRepo`) and the geofence ETag flow incl. `"0"` sentinel + 412→409 (owned by task B5's full config read/write — today's `BlobGeofenceConfigRepo` only reads the ETag for the §5.1 piggyback). Neither adapter exists yet at the time of writing; add their integration tests to this same suite when those tasks merge.
 
 ## TDD workflow (non-negotiable)
 
