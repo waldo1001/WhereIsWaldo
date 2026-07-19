@@ -18,4 +18,38 @@ public final class AppCoordinator: ObservableObject {
     public func showHome() {
         route = .home
     }
+
+    // MARK: - I2 feature-screen routes
+
+    public func showLiveMap() {
+        route = .liveMap
+    }
+
+    public func showHistory(userId: String, deviceId: String? = nil) {
+        route = .history(userId: userId, deviceId: deviceId)
+    }
+
+    public func showGeofences() {
+        route = .geofences
+    }
+
+    public func showLocate(target: LocateTarget, targetDisplayName: String) {
+        route = .locate(target: target, targetDisplayName: targetDisplayName)
+    }
+
+    public func showDeviceSettings(isParent: Bool) {
+        route = .deviceSettings(isParent: isParent)
+    }
+
+    public func showFamilyMembers() {
+        route = .familyMembers
+    }
+
+    public func showCreateInvite() {
+        route = .createInvite
+    }
+
+    public func showAcceptInvite(prefillCode: String = "") {
+        route = .acceptInvite(prefillCode: prefillCode)
+    }
 }

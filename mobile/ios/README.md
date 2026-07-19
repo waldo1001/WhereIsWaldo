@@ -1,6 +1,6 @@
 # Where's waldo — iOS app (Swift)
 
-**I1 (foundation) implemented.** Normative design: [`specs/004-ios-client.md`](../../specs/004-ios-client.md) — read that first; it owns the architecture, the design-system token contract, the full 001 endpoint mapping, auth/token-refresh, the fix-queue model, and the location/push strategy (000 §O1). Wire contract: [`specs/001-api-contract.md`](../../specs/001-api-contract.md). Product context: [`specs/000-overview.md`](../../specs/000-overview.md), esp. open items **O1–O4, O9**.
+**I1 (foundation) + I2 (feature screens) implemented.** Normative design: [`specs/004-ios-client.md`](../../specs/004-ios-client.md) — read that first; it owns the architecture, the design-system token contract, the full 001 endpoint mapping, auth/token-refresh, the fix-queue model, and the location/push strategy (000 §O1). Wire contract: [`specs/001-api-contract.md`](../../specs/001-api-contract.md). Product context: [`specs/000-overview.md`](../../specs/000-overview.md), esp. open items **O1–O4, O9**.
 
 ## What's here
 
@@ -10,14 +10,23 @@ mobile/ios/
 │   │                    `cd WaldoKit && swift build && swift test`
 │   ├── Sources/WaldoKit/   Config, Networking (full 001 client, 19 endpoints), Auth, Device,
 │   │                       Locations (offline fix-queue), LocationSensing, Push, DesignSystem
-│   │                       (tokens/theme/components), Navigation, Screens (sign-in proof screen)
+│   │                       (tokens/theme/11 components), Navigation, Screens/ — sign-in (I1) +
+│   │                       Home, Map (live map + swappable MapKit/list `MapRendering`), History
+│   │                       (cursor pagination), Geofences (list/editor, ETag-aware save +
+│   │                       version-conflict merge UX), Locate (create + poll-to-terminal),
+│   │                       Settings (device + family members), Invites (create + accept, with
+│   │                       deep-link validation) — all I2
 │   └── Tests/WaldoKitTests/   Swift Testing suite (see specs/004 §9 for why not XCTest here)
 └── WheresWaldo/      ← Thin SwiftUI app-target SOURCE FILES (App lifecycle + composition root
                          only, zero business logic). No `.xcodeproj` is committed yet — see
                          specs/004 §1.1 for why and how to create one.
 ```
 
-**I2** (not started) adds the feature screens on top of this foundation: live map, history, geofences editor, locate-to-request, device/family settings, invites — same design system, no changes to the layers above.
+**I2** adds the feature screens on top of I1's foundation: live map (§5.2), history (§5.3),
+geofences list/editor (§7.1–7.2), locate-to-request (§6), device/family settings
+(§4.2–4.3/§3.5–3.6), invites (§3.3–3.4) — same design system, no changes to `DesignSystem/Tokens`
+or `Theme`; two new stateless components (`WaldoTextField`, `WaldoToggleRow`) were added to
+`DesignSystem/Components/` for the new forms.
 
 ## Build & test
 
