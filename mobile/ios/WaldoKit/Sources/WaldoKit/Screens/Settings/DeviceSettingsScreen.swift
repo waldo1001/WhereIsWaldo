@@ -2,8 +2,8 @@ import SwiftUI
 
 /// specs/004-ios-client.md I2 (001 §4.2–4.3) — composes ONLY design-system components. Sync-
 /// interval selection is a row of `WaldoButton` toggles (the allowed §1.4 values); pause is a
-/// `WaldoToggleRow`. Both are hidden (read-only) for a non-parent viewer, matching §4.3's
-/// parent-vs-owner permission split.
+/// `WaldoToggleRow`; rename is a `WaldoTextField` + "Save name" button. All three are hidden
+/// (read-only) for a non-parent viewer, matching §4.3's parent-vs-owner permission split.
 public struct DeviceSettingsScreen: View {
     @Environment(\.theme) private var theme
     @ObservedObject private var viewModel: DeviceSettingsViewModel
@@ -45,15 +45,30 @@ public struct DeviceSettingsScreen: View {
                     EmptyStateView(title: "No devices yet", message: "Devices register automatically after sign-in.")
                 } else {
                     ForEach(devices, id: \.deviceId) { device in
-                        deviceCard(device)
+                        DeviceCardView(viewModel: viewModel, device: device)
                     }
                 }
             }
             .padding(theme.spacing.md)
         }
     }
+}
 
-    private func deviceCard(_ device: DeviceListItem) -> some View {
+/// One device's card — its own `View` (rather than a plain function returning `some View`) so the
+/// rename draft's `@State` is scoped per-row instead of colliding across every device in the list.
+private struct DeviceCardView: View {
+    @Environment(\.theme) private var theme
+    @ObservedObject var viewModel: DeviceSettingsViewModel
+    let device: DeviceListItem
+    @State private var renameDraft: String
+
+    init(viewModel: DeviceSettingsViewModel, device: DeviceListItem) {
+        self.viewModel = viewModel
+        self.device = device
+        self._renameDraft = State(initialValue: device.deviceName)
+    }
+
+    var body: some View {
         WaldoCard {
             VStack(alignment: .leading, spacing: theme.spacing.sm) {
                 HStack {
@@ -74,13 +89,24 @@ public struct DeviceSettingsScreen: View {
                             set: { newValue in Task { await viewModel.setTrackingEnabled(deviceId: device.deviceId, newValue) } }
                         )
                     )
-                    intervalPicker(for: device)
+                    intervalPicker
+                    renameRow
                 }
             }
         }
     }
 
-    private func intervalPicker(for device: DeviceListItem) -> some View {
+    private var renameRow: some View {
+        HStack(spacing: theme.spacing.sm) {
+            WaldoTextField("Device name", text: $renameDraft, placeholder: device.deviceName)
+            WaldoButton("Save name", style: .secondary) {
+                Task { await viewModel.rename(deviceId: device.deviceId, name: renameDraft) }
+            }
+            .disabled(renameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+
+    private var intervalPicker: some View {
         VStack(alignment: .leading, spacing: theme.spacing.xs) {
             Text("Sync interval")
                 .font(theme.typography.labelSmall)

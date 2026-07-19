@@ -85,4 +85,44 @@ struct DeviceSettingsViewModelTests {
         #expect(viewModel.lastActionError != nil)
         #expect(viewModel.state == .loaded([makeDevice()]))
     }
+
+    // MARK: - rename (review-gate finding #4 — previously dead code, now wired into DeviceSettingsScreen)
+
+    @Test func rename_asParent_updatesTheMatchingDeviceInPlace() async {
+        let api = FakeAPIClient()
+        api.listDevicesHandler = { TestFeatures.envelope(ListDevicesResponse(devices: [self.makeDevice()])) }
+        api.updateDeviceHandler = { deviceId, request in
+            #expect(deviceId == "d1")
+            #expect(request.deviceName == "Noor's tablet")
+            return TestFeatures.envelope(DeviceResponse(
+                deviceId: "d1", ownerUserId: "u1", platform: "ios", deviceName: "Noor's tablet", model: "iPhone 15",
+                appVersion: "1.0.0", syncIntervalMinutes: 15, trackingEnabled: true, pushInvalid: false
+            ))
+        }
+        let viewModel = DeviceSettingsViewModel(apiClient: api, isParent: true)
+        await viewModel.load()
+
+        await viewModel.rename(deviceId: "d1", name: "Noor's tablet")
+
+        guard case .loaded(let devices) = viewModel.state else {
+            Issue.record("expected .loaded state")
+            return
+        }
+        #expect(devices.first?.deviceName == "Noor's tablet")
+        #expect(viewModel.lastActionError == nil)
+        #expect(api.updateDeviceCalls.count == 1)
+    }
+
+    @Test func rename_asNonParent_isRejectedWithoutCallingTheApi() async {
+        let api = FakeAPIClient()
+        api.listDevicesHandler = { TestFeatures.envelope(ListDevicesResponse(devices: [self.makeDevice()])) }
+        let viewModel = DeviceSettingsViewModel(apiClient: api, isParent: false)
+        await viewModel.load()
+
+        await viewModel.rename(deviceId: "d1", name: "New name")
+
+        #expect(api.updateDeviceCalls.isEmpty)
+        #expect(viewModel.lastActionError != nil)
+        #expect(viewModel.state == .loaded([makeDevice()]))
+    }
 }
