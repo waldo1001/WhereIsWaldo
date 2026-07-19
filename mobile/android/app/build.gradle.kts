@@ -5,6 +5,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// A2 (specs/003-android-client.md §13, `ui/map/MapRenderer.kt`): a real map-tile SDK needs a
+// Google Maps API key that only exists once H1 (docs/azure-setup.md) provisions one. Read from a
+// Gradle project property so it can be supplied via `-PMAPS_API_KEY=...` (CI secret) or a local,
+// gitignored `local.properties`/`gradle.properties` override — NEVER hardcoded here and NEVER
+// committed (docs/security-review-checklist.md §5). Empty string is the correct, safe default:
+// `PlaceholderMapRenderer` is used regardless of this value in A2 (no real SDK is wired yet).
+val mapsApiKey: String = (project.findProperty("MAPS_API_KEY") as String?).orEmpty()
+
 android {
     namespace = "com.whereswaldo.android"
     compileSdk = 36
@@ -26,6 +34,7 @@ android {
             buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:7071/api/\"")
             buildConfigField("String", "AUTH_MODE", "\"insecure-local\"")
             buildConfigField("String", "FIREBASE_PROJECT_ID", "\"waldo-dev-placeholder\"")
+            buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
         }
         release {
             isMinifyEnabled = false // TODO(H1): enable + tune proguard-rules.pro before shipping
@@ -35,6 +44,7 @@ android {
             buildConfigField("String", "BASE_URL", "\"https://CHANGE-ME.azurewebsites.net/api/\"")
             buildConfigField("String", "AUTH_MODE", "\"firebase\"")
             buildConfigField("String", "FIREBASE_PROJECT_ID", "\"CHANGE-ME\"")
+            buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
         }
     }
 
