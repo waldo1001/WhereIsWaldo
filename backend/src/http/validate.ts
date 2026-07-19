@@ -31,3 +31,29 @@ export const registerDeviceRequestSchema = z.object({
   deviceName: z.string().min(1).max(40).optional(),
 });
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
+
+// specs/001 §3.3 — role of the invitee; emailHint optional, valid email if present.
+export const createInviteRequestSchema = z.object({
+  role: z.enum(["parent", "member"]),
+  emailHint: z.string().email().optional(),
+});
+export type CreateInviteRequest = z.infer<typeof createInviteRequestSchema>;
+
+// specs/001 §3.4 — inviteCode canonicalized by the domain (uppercase, no hyphen) after
+// this schema only checks presence; displayName 1-30 chars (same rule as §3.1).
+export const acceptInviteRequestSchema = z.object({
+  inviteCode: z.string().min(1),
+  displayName: z.string().min(1).max(30),
+});
+export type AcceptInviteRequest = z.infer<typeof acceptInviteRequestSchema>;
+
+// specs/001 §3.5 — at least one of role/displayName required.
+export const updateMemberRequestSchema = z
+  .object({
+    role: z.enum(["parent", "member"]).optional(),
+    displayName: z.string().min(1).max(30).optional(),
+  })
+  .refine((data) => data.role !== undefined || data.displayName !== undefined, {
+    message: "at least one field (role or displayName) is required",
+  });
+export type UpdateMemberRequest = z.infer<typeof updateMemberRequestSchema>;

@@ -33,4 +33,14 @@ export class InMemoryDeviceRepo implements DeviceRepo {
   async countDevices(familyId: string): Promise<number> {
     return this.devices.get(familyId)?.size ?? 0;
   }
+
+  async deleteDevicesByOwner(familyId: string, userId: string): Promise<void> {
+    const roster = this.devices.get(familyId);
+    if (!roster) return;
+    for (const [deviceId, device] of roster) {
+      if (device.ownerUserId === userId) {
+        roster.delete(deviceId);
+      }
+    }
+  }
 }

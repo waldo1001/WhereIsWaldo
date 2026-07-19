@@ -119,6 +119,8 @@ export interface DeviceRepo {
   listDevices(familyId: string): Promise<DeviceRecord[]>;
   /** Partition scan count = the device-cap check (001 §4.1). */
   countDevices(familyId: string): Promise<number>;
+  /** Removes all device registrations owned by a user within a family (001 §3.6). */
+  deleteDevicesByOwner(familyId: string, userId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
