@@ -75,4 +75,82 @@ class WaldoApiClientAuthRetryTest {
         assertEquals(1, authProvider.forceRefreshCallCount)
         assertEquals(2, server.requestCount)
     }
+
+    // ------------------------------------------------------------------
+    // The DRY'd `withAuthRetry` helper (network/WaldoApiClient.kt) must also cover the three
+    // body-shape-exception endpoints — bare 204 (removeMember), bare 304 (getGeofences), and the
+    // ETag-header-carrying success (replaceGeofences) — not just the generic envelope path above.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `removeMember's bare 204 retries once on AUTH_TOKEN_EXPIRED then succeeds`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = client.removeMember("u2")
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals(Unit, result.data)
+        assertEquals(null, result.features)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `getGeofences's bare 304 retries once on AUTH_TOKEN_EXPIRED then succeeds`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(304))
+
+        val result = client.getGeofences(ifNoneMatch = "\"0x1\"")
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals(null, result.data)
+        assertEquals(null, result.features)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `replaceGeofences's ETag-carrying success retries once on AUTH_TOKEN_EXPIRED`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("ETag", "\"0x5\"")
+                .setBody(
+                    """{"data":{"version":5,"geofences":[]},
+                        "features":{"subscriptionStatus":"free",
+                          "limits":{"maxDevices":10,"maxGeofences":20,"historyDays":90,
+                                    "minSyncIntervalMinutes":5,"locateRequestsPerDay":100},
+                          "flags":{"pushToLocate":true,"geofencing":true,"historyReplay":true}}}
+                    """.trimIndent(),
+                ),
+        )
+
+        val result = client.replaceGeofences(ifMatch = "\"0x4\"", geofences = emptyList())
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals("\"0x5\"", result.data.etag)
+        assertEquals(5, result.data.value.version)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a second AUTH_TOKEN_EXPIRED on removeMember surfaces as Failure without a third attempt`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+
+        val result = client.removeMember("u2")
+
+        assertTrue(result is ApiResult.Failure)
+        assertTrue((result as ApiResult.Failure).error is ApiError.AuthTokenExpired)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
 }
