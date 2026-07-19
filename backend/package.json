@@ -1,0 +1,36 @@
+{
+  "name": "whereswaldo-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Where's waldo — Azure Functions backend (TypeScript, Node 20, v4 programming model)",
+  "main": "dist/src/functions/*.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage --passWithNoTests",
+    "mutation": "stryker run",
+    "dev:storage": "npx azurite --silent --location .azurite",
+    "dev": "npm run build && func start"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0",
+    "@azure/functions": "^4.6.0",
+    "@azure/identity": "^4.5.0",
+    "@azure/storage-blob": "^12.26.0",
+    "jose": "^5.9.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@types/node": "^20.17.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
+  }
+}

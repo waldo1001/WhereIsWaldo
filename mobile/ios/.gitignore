@@ -1,0 +1,22 @@
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Signing — never commit
+*.ipa
+*.mobileprovision
+*.p12
+*.cer
+
+# Firebase config
+GoogleService-Info.plist
+
+# CocoaPods (if ever used)
+Pods/

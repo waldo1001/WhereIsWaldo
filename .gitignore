@@ -1,0 +1,12 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs & env
+*.log
+.env
+.env.*
+
+# Editors
+.idea/
+.vscode/
