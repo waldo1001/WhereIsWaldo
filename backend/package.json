@@ -12,9 +12,10 @@
     "watch": "tsc -w",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts --passWithNoTests",
     "coverage": "vitest run --coverage --passWithNoTests",
     "mutation": "stryker run",
-    "dev:storage": "npx azurite --silent --location .azurite",
+    "dev:storage": "npx azurite --silent --location .azurite --skipApiVersionCheck",
     "dev": "npm run build && func start"
   },
   "dependencies": {
