@@ -14,6 +14,8 @@ xcuserdata/
 *.mobileprovision
 *.p12
 *.cer
+# APNs auth key
+*.p8
 
 # Firebase config
 GoogleService-Info.plist
