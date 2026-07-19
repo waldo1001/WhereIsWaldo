@@ -297,7 +297,7 @@ Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§
 ## 16. Test checklist
 
 - Envelope: success unwraps `data`+`features`; `removeMember` yields `Success(Unit, features = null)`; `getGeofences` 304 yields `Success(null, features = null)`; error unwraps into the matching `ApiError` subtype with `requestId` preserved.
-- Errors: **every** 001 §10 code (all 20) maps to its named `ApiError` subtype, not `Unknown`; code-specific `details` (fields/reason/limit/currentEtag/deviceSettings/retryAfterSeconds/max) decode correctly.
+- Errors: **every** 001 §10 code (all 21) maps to its named `ApiError` subtype, not `Unknown`; code-specific `details` (fields/reason/limit/currentEtag/deviceSettings/retryAfterSeconds/max) decode correctly.
 - Auth-retry: a call receiving `AUTH_TOKEN_EXPIRED` triggers exactly one `currentIdToken(forceRefresh = true)` and one retry; a second expiry surfaces as `Failure`.
 - Device registration: request omits absent `pushToken`/`locationPushToken`; `deviceId` is a stable UUIDv4 per uid from `DeviceIdProvider`; a push-token refresh triggers exactly one `registerOrUpdate` call carrying the new token.
 - Fix-queue: `nextBatch()` idempotent (same `batchId`+fixes) until resolved; `markBatchAccepted` removes exactly the acked fixes; `markBatchRejected` drops only named offenders and the remainder gets a fresh `batchId` on the next call; `markBatchFailedTransient` changes nothing (retry-safe); new `enqueue()` during an in-flight batch never joins it; `maxSize` cap is respected; empty pool → `null`, never an empty batch.
