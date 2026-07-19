@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fulfillLocateRequest, toStoredFix } from "../../../src/domain/locate/fulfillLocateRequest";
 import { getFeatures } from "../../../src/domain/plan";
+import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
 import { InMemoryLocateRequestRepo } from "../../fakes/inMemoryLocateRequestRepo";
 import { InMemoryLastKnownRepo } from "../../fakes/inMemoryLastKnownRepo";
 import { InMemoryHistoryStore } from "../../fakes/inMemoryHistoryStore";
@@ -9,19 +10,42 @@ import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
-import type { LocateRequestRecord } from "../../../src/ports/repositories";
+import type { DeviceRecord, LocateRequestRecord } from "../../../src/ports/repositories";
 
 const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
 const TARGET_UID = "u2";
+const ATTACKER_UID = "u3";
 const TARGET_DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
 const OTHER_DEVICE_ID = "4f1a3b0d-7c2e-5f9a-ab3c-8d6e5f4a3b2c";
+const UNREGISTERED_DEVICE_ID = "5a2b4c1e-8d3f-4a9b-bc4d-9e6f5a4b3c2d";
 const REQUEST_ID = "lr_00000000000000000001";
 const NOW = "2026-07-19T09:10:00Z";
+
+function device(overrides: Partial<DeviceRecord> = {}): DeviceRecord {
+  return {
+    deviceId: TARGET_DEVICE_ID,
+    ownerUserId: TARGET_UID,
+    platform: "android",
+    model: "Pixel 8",
+    appVersion: "1.0.0",
+    deviceName: "Noor's phone",
+    pushInvalid: false,
+    syncIntervalMinutes: 15,
+    trackingEnabled: true,
+    registeredAt: "2026-07-01T00:00:00Z",
+    lastSeenAt: "2026-07-19T09:00:00Z",
+    ...overrides,
+  };
+}
 
 function buildDeps() {
   const entitlementsRepo = new InMemoryEntitlementsRepo();
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
+  const deviceRepo = new InMemoryDeviceRepo();
+  // Default: the request's actual target device, correctly registered to its real owner.
+  deviceRepo.seed(FAMILY_ID, device());
   return {
+    deviceRepo,
     locateRequestRepo: new InMemoryLocateRequestRepo(),
     lastKnownRepo: new InMemoryLastKnownRepo(),
     historyStore: new InMemoryHistoryStore(),
@@ -61,6 +85,7 @@ function fix(overrides: Record<string, unknown> = {}) {
 
 function baseInput(overrides: Record<string, unknown> = {}) {
   return {
+    uid: TARGET_UID,
     familyId: FAMILY_ID as string | null,
     deviceId: TARGET_DEVICE_ID as string | null,
     requestId: REQUEST_ID,
@@ -109,9 +134,12 @@ describe("domain/locate/fulfillLocateRequest", () => {
     await expectAppError(fulfillLocateRequest(baseInput(), deps), "LOCATE_REQUEST_NOT_FOUND");
   });
 
-  it("throws AUTH_FORBIDDEN when X-Device-Id does not match the request's targetDeviceId", async () => {
+  it("throws AUTH_FORBIDDEN when X-Device-Id does not match the request's targetDeviceId (but IS a device the caller owns)", async () => {
     const deps = buildDeps();
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
+    // The caller's own second device — legitimately registered to them, just not the
+    // one this locate request targeted. Must be AUTH_FORBIDDEN, not DEVICE_NOT_FOUND.
+    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: OTHER_DEVICE_ID, ownerUserId: TARGET_UID }));
     await expectAppError(
       fulfillLocateRequest(baseInput({ deviceId: OTHER_DEVICE_ID }), deps),
       "AUTH_FORBIDDEN",
@@ -122,6 +150,43 @@ describe("domain/locate/fulfillLocateRequest", () => {
     const deps = buildDeps();
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
     await expectAppError(fulfillLocateRequest(baseInput({ deviceId: null }), deps), "AUTH_FORBIDDEN");
+  });
+
+  it("throws DEVICE_NOT_FOUND when X-Device-Id is not a registered device at all (specs/001 §1.2)", async () => {
+    const deps = buildDeps();
+    deps.locateRequestRepo.seed(record({ targetDeviceId: UNREGISTERED_DEVICE_ID, expiresAt: "2026-07-19T09:11:00Z" }));
+    await expectAppError(
+      fulfillLocateRequest(baseInput({ deviceId: UNREGISTERED_DEVICE_ID }), deps),
+      "DEVICE_NOT_FOUND",
+    );
+  });
+
+  it("SECURITY: throws DEVICE_NOT_FOUND when X-Device-Id equals the request's target but is owned by a DIFFERENT user than the caller", async () => {
+    // Exploit scenario: an attacker learns the victim's deviceId (e.g. via GET
+    // /locations/latest or the create-locate-request response) and calls fulfill with
+    // THEIR OWN token but X-Device-Id set to the victim's device, trying to inject a
+    // forged fix into the victim's LastKnown/history. Ownership must block this before
+    // the §6.3 target-match check is ever reached.
+    const deps = buildDeps(); // TARGET_DEVICE_ID is registered to TARGET_UID, not ATTACKER_UID
+    deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
+
+    await expectAppError(
+      fulfillLocateRequest(baseInput({ uid: ATTACKER_UID, deviceId: TARGET_DEVICE_ID }), deps),
+      "DEVICE_NOT_FOUND",
+    );
+
+    // And no forged fix was written anywhere.
+    expect(await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID)).toBeNull();
+    expect(deps.historyStore.fixes.length).toBe(0);
+  });
+
+  it("legit path: caller owns the device AND it equals targetDeviceId -> succeeds", async () => {
+    const deps = buildDeps();
+    deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
+
+    const result = await fulfillLocateRequest(baseInput({ uid: TARGET_UID, deviceId: TARGET_DEVICE_ID }), deps);
+
+    expect(result.status).toBe("fulfilled");
   });
 
   it("throws VALIDATION_FAILED when fix.source is not 'locate'", async () => {
@@ -301,8 +366,10 @@ describe("domain/locate/fulfillLocateRequest", () => {
   });
 
   it("a paused target device MAY still fulfill (TRACKING_PAUSED does not apply here)", async () => {
-    // No DeviceRepo dependency at all — pause state is irrelevant to fulfill (§6.3).
+    // DeviceRepo IS consulted now (for the §1.2 ownership check), but trackingEnabled
+    // is deliberately never inspected — a paused device must still be able to fulfill.
     const deps = buildDeps();
+    deps.deviceRepo.seed(FAMILY_ID, device({ trackingEnabled: false }));
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
 
     const result = await fulfillLocateRequest(baseInput(), deps);

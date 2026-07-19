@@ -1,12 +1,18 @@
 // specs/001 §6.3 — fulfill locate request. Pure domain logic: no Azure/Google imports.
-// Called by the TARGET device; TRACKING_PAUSED intentionally never applies here (§6.3),
-// so this use-case has no DeviceRepo dependency at all — authorization is a plain
-// X-Device-Id === targetDeviceId comparison against the stored request.
+// Called by the TARGET device. TRACKING_PAUSED intentionally never applies here (§6.3) —
+// a paused device MAY still fulfill, so device.trackingEnabled is deliberately never
+// inspected below. But §1.2's device-ownership precondition still applies to every
+// device-originated call: X-Device-Id MUST match a device registered to the calling user
+// (else 404 DEVICE_NOT_FOUND) — mirrors reportLocations.ts's ownership check — BEFORE the
+// separate §6.3 business rule that the device must equal the request's actual target
+// (else 403 AUTH_FORBIDDEN). Skipping the ownership check would let any family member
+// forge another member's location by supplying a sibling's known deviceId.
 
 import { AppError } from "../../http/errors";
 import { fulfillLocateRequestRequestSchema, parseOrThrow, type LocationFixRequest } from "../../http/validate";
 import type { Clock } from "../../ports/support";
 import type {
+  DeviceRepo,
   EntitlementsRepo,
   IdempotencyRepo,
   LastKnownRecord,
@@ -18,6 +24,7 @@ import type { FixLine, HistoryStore } from "../../ports/historyStore";
 import { getFeatures, type Features } from "../plan";
 
 export interface FulfillLocateRequestDeps {
+  deviceRepo: DeviceRepo;
   locateRequestRepo: LocateRequestRepo;
   lastKnownRepo: LastKnownRepo;
   historyStore: HistoryStore;
@@ -28,6 +35,7 @@ export interface FulfillLocateRequestDeps {
 }
 
 export interface FulfillLocateRequestInput {
+  uid: string;
   /** The X-Device-Id header (§1.2), null if absent. */
   deviceId: string | null;
   /** The caller's familyId from the resolved auth context (§1.5), null if no profile. */
@@ -81,7 +89,19 @@ export async function fulfillLocateRequest(
     throw new AppError("LOCATE_REQUEST_NOT_FOUND", "unknown requestId");
   }
 
-  if (input.deviceId !== record.targetDeviceId) {
+  // specs/001 §1.2 — device-ownership precondition (mirrors reportLocations.ts): the
+  // header is required, and MUST resolve to a device actually registered to this caller.
+  if (!input.deviceId) {
+    throw new AppError("AUTH_FORBIDDEN", "X-Device-Id header is required to fulfill a locate request");
+  }
+  const callerDeviceId = input.deviceId;
+  const device = await deps.deviceRepo.getDevice(familyId, callerDeviceId);
+  if (!device || device.ownerUserId !== input.uid) {
+    throw new AppError("DEVICE_NOT_FOUND", "X-Device-Id is not registered to the calling user");
+  }
+
+  // specs/001 §6.3 — separately, the fulfilling device must be the request's actual target.
+  if (callerDeviceId !== record.targetDeviceId) {
     throw new AppError("AUTH_FORBIDDEN", "X-Device-Id does not match the locate request's target device");
   }
 

@@ -131,12 +131,22 @@ app.http("fulfillLocateRequest", {
       const body: unknown = await request.json().catch(() => ({}));
       const result = await fulfillLocateRequest(
         {
+          uid: auth.uid,
           deviceId: request.headers.get("x-device-id"),
           familyId: auth.familyId,
           requestId: request.params.requestId ?? "",
           body,
         },
-        { locateRequestRepo, lastKnownRepo, historyStore, idempotencyRepo, usageRepo, entitlementsRepo, clock },
+        {
+          deviceRepo,
+          locateRequestRepo,
+          lastKnownRepo,
+          historyStore,
+          idempotencyRepo,
+          usageRepo,
+          entitlementsRepo,
+          clock,
+        },
       );
       return { status: 200, jsonBody: ok({ status: result.status }, result.features) };
     } catch (err) {
