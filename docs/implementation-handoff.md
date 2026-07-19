@@ -8,7 +8,7 @@
 |---|---|
 | Specs 000/001/002 | ✅ Complete and normative (product, full API contract, storage schema) |
 | Repo scaffold, CI workflows | ✅ In place; `backend` workflow gates test + mutation, deploy auto-skips until Azure exists |
-| Backend | 🔵 **B1 merged** (create family §3.1 + register device §4.1 + http plumbing + full ports surface; 46 tests, mutation 99.37%). B2/B3 in progress. `src/index.ts` deleted. |
+| Backend | 🔵 **B1+B2 merged** (family+device+http plumbing; locations report+live-map §5.1/§5.2). B3 in review; B4/B6 in progress. 89 tests, mutation 100%. |
 | Android / iOS / web | ⬜ Not started (placeholder READMEs describe the planned shape) |
 | Azure/Firebase provisioning | ⬜ Manual, human-run: `docs/azure-setup.md` |
 
@@ -54,11 +54,11 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 | ID | Scope | Depends on | Status |
 |---|---|---|---|
 | B1 | Create family + register device + http plumbing (001 §3.1, §4.1; detailed checklist above) | — | done |
-| B2 | Locations: report batch §5.1 + latest §5.2 (idempotency markers, last-known only-newer, piggyback) | B1 | in-progress |
-| B3 | Invites & members §3.2–3.6 | B1 | in-progress |
-| B4 | Locate flow §6 + FCM adapter §8 | B2 | todo |
+| B2 | Locations: report batch §5.1 + latest §5.2 (idempotency markers, last-known only-newer, piggyback) | B1 | done |
+| B3 | Invites & members §3.2–3.6 | B1 | review |
+| B4 | Locate flow §6 + FCM adapter §8 | B2 | in-progress |
 | B5 | Geofences §7 (config ETag flow, events, flag-filtered fan-out) | B2, B4 | todo |
-| B6 | History §5.3/§7.4 (blob store + cursor) + storage-adapter integration tests vs Azurite (002 §6) | B2 | todo |
+| B6 | History §5.3/§7.4 (blob store read+cursor, completes B2's append-only historyBlobStore) + storage-adapter integration tests vs Azurite (002 §6) | B2 | in-progress |
 | H1 | Run `docs/azure-setup.md` (Azure + Firebase + branch protection) | — | human |
 | A1 | Android: write `003-android-client.md` spec **first**, then Compose foundation — **swappable design-system layer** (tokens→Material3 theme→stateless components, light+dark), full 001 API client, Firebase-Auth abstraction (stubbed), device registration §4.1, nav scaffold, one proof screen, JUnit logic tests | B1 (H1 waived for coding) | in-progress |
 | I1 | iOS: write `004-ios-client.md` spec first, then SwiftUI foundation — logic/design-system in a headless-testable **SPM package**, **swappable design-system layer** (tokens→theme→components, light+dark), full 001 API client, Firebase-Auth abstraction (stubbed), device registration §4.1, nav scaffold, one proof screen, `swift test` logic tests; **flag the Location Push entitlement application as a human/Apple task** | B1 (H1 waived for coding) | in-progress |
@@ -72,6 +72,12 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 ## Dev-loop log
 
 *(appended by /dev-loop — newest first: date · task · agent rounds · review findings fixed · merge commit)*
+
+**Known follow-ups / tech-debt (raised in review, deliberately deferred):**
+- **`apiCalls` placement.** All domain use-cases increment `apiCalls` only on the success path (B1 pattern, mirrored by B2/B3), but §9 says "+1 per authenticated request, once auth succeeds." Since Usage is telemetry-not-billing (002 §2.9), deferred: move the `apiCalls` increment into the shared `authGuard`/HTTP layer so every authenticated request (incl. 4xx) counts exactly once — do it across B1+B2+B3 together, not piecemeal.
+- **Catch-all error logging.** Function `errorResponse()` catch-alls log the raw `err` object. No demonstrated leak (Azure `RestError.request/response` are non-enumerable, so coordinates aren't serialized), but harden to log `err.message`/`err.code` only, across all `*.functions.ts`.
+
+- **2026-07-19 · B2** · 2 coding rounds (initial + 1 fix) · reviews: security **approved** clean; code review found **1 major fixed** — `details.fields` now uses bracket notation `fixes[3].recordedAt` (§5.1/§10) instead of dot, killing the deferred B1 `validate.ts` mutant with the correct format — **+1 minor fixed** (`lastKnownTableRepo` retry 2→1 per 002 §2.5); `apiCalls` note deferred to tech-debt above. Result: 89 tests, mutation 100% (365 mutants, break 60), build clean · merge `dad39f9`.
 
 - **2026-07-19 · B1** · 2 coding rounds (initial + 1 fix) · reviews: code+security both ran; **1 finding fixed** — `firebaseJoseVerifier.ts` now enforces §2.2 "iat in the past" (jose omits it without `maxTokenAge`); **1 finding deferred to B2** — surviving `validate.ts` mutant (`.join(".")` vs `.join("")`), unobservable on B1's flat schemas, must be killed by a nested-path test in B2 batch validation · spec change: **specs/001 §4.1 pinned** (omitted token on update = preserve). Result: 46 tests, mutation 99.37% (break 60), build clean · merge `708a6fa`.
 
