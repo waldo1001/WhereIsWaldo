@@ -62,4 +62,14 @@ public final class DeviceRegistrationService {
             }
         }
     }
+
+    /// Subscribes to APNs Location Push token availability (000 §O1) and re-registers with it the
+    /// moment it's captured — same best-effort semantics as `observePushTokenRefreshes`.
+    public func observeLocationPushTokenUpdates(_ provider: LocationPushTokenHandling) {
+        Task { [weak self] in
+            for await token in provider.locationPushTokenUpdates {
+                _ = try? await self?.registerOrUpdate(locationPushToken: token)
+            }
+        }
+    }
 }
