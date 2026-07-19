@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Security (docs/security-review-checklist.md §5): TLS only, no blanket cleartext exemption.
+  The single carve-out is 10.0.2.2, the Android emulator's documented, non-routable loopback
+  alias to the host machine used only by the debug BuildConfig.BASE_URL to reach a locally
+  running `func start` (backend/README.md) — it is not a real/third-party endpoint and cannot
+  be reached from a real device on a real network. Remove this carve-out at H1 once the release
+  build's real base URL is HTTPS-only end to end (it already is, see app/build.gradle.kts).
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

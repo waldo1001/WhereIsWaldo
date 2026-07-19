@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  No files excluded yet — A1 persists nothing sensitive locally (the dev-mode DeviceIdStore is
+  a per-uid UUID, not a credential). Revisit once real Firebase Auth / FCM tokens are cached
+  locally at H1.
+-->
+<full-backup-content>
+</full-backup-content>
