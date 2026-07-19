@@ -38,6 +38,17 @@ describe("domain/family/createInvite", () => {
     expect(result.features).toEqual(getFeatures("free"));
   });
 
+  it("accepts role: parent for the invitee", async () => {
+    const deps = buildDeps();
+
+    const result = await createInvite(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", body: { role: "parent" } },
+      deps,
+    );
+
+    expect(result.role).toBe("parent");
+  });
+
   it("stores the invite record via the repo fake", async () => {
     const deps = buildDeps();
 

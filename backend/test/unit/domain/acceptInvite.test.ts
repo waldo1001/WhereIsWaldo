@@ -142,6 +142,30 @@ describe("domain/family/acceptInvite", () => {
     );
   });
 
+  it("throws INVITE_EXPIRED when now exactly equals expiresAt (inclusive boundary)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    await deps.inviteRepo.createInvite(baseInvite({ expiresAt: "2026-07-19T09:00:00.000Z" }));
+
+    await expectAppError(
+      acceptInvite({ uid: "u2", familyId: null, body: { inviteCode: INVITE_CODE, displayName: "Noor" } }, deps),
+      "INVITE_EXPIRED",
+    );
+  });
+
+  it("accepts one millisecond before expiresAt (not yet expired)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    await deps.inviteRepo.createInvite(baseInvite({ expiresAt: "2026-07-19T09:00:00.001Z" }));
+
+    const result = await acceptInvite(
+      { uid: "u2", familyId: null, body: { inviteCode: INVITE_CODE, displayName: "Noor" } },
+      deps,
+    );
+
+    expect(result.role).toBe("member");
+  });
+
   it("throws INVITE_ALREADY_USED when the code was already consumed", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
@@ -179,7 +203,10 @@ describe("domain/family/acceptInvite", () => {
 
   it("throws INTERNAL_ERROR when the invite references a family with no meta record", async () => {
     const deps = buildDeps();
-    // Deliberately skip seedFamily — the invite points at a family that was never created.
+    // Entitlements ARE seeded (isolating this check from the separate entitlements-missing
+    // one below) but familyRepo.createFamily was deliberately never called for FAMILY_ID —
+    // getFamilyMeta returns null even though the invite points at this familyId.
+    deps.entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
     await deps.inviteRepo.createInvite(baseInvite());
 
     await expectAppError(

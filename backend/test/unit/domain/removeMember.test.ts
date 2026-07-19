@@ -141,6 +141,37 @@ describe("domain/family/removeMember", () => {
     );
   });
 
+  it('throws "lastParent" for the only parent removing themselves even with other (non-parent) members present', async () => {
+    const deps = buildDeps();
+    await deps.familyRepo.createFamily({
+      familyId: FAMILY_ID,
+      familyName: "Wauters",
+      createdBy: "u1",
+      createdAt: "2026-07-19T08:00:00Z",
+    });
+    await deps.familyRepo.addMember(FAMILY_ID, {
+      userId: "u1",
+      role: "parent",
+      displayName: "Eric",
+      joinedAt: "2026-07-19T08:00:00Z",
+    });
+    await deps.familyRepo.addMember(FAMILY_ID, {
+      userId: "u2",
+      role: "member",
+      displayName: "Noor",
+      joinedAt: "2026-07-19T08:30:00Z",
+    });
+    await deps.userRepo.createProfile("u1", { familyId: FAMILY_ID, role: "parent", displayName: "Eric" });
+    await deps.userRepo.createProfile("u2", { familyId: FAMILY_ID, role: "member", displayName: "Noor" });
+
+    // Total member count is 2, but only 1 is a parent — the count MUST be parent-filtered.
+    await expectAppError(
+      removeMember({ uid: "u1", familyId: FAMILY_ID, role: "parent", targetUserId: "u1" }, deps),
+      "VALIDATION_FAILED",
+      { reason: "lastParent" },
+    );
+  });
+
   it("allows a parent to remove another parent when a parent remains afterward", async () => {
     const deps = buildDeps();
     await seedTwoParentFamily(deps);

@@ -87,7 +87,10 @@ describe("domain/family/getMyFamily", () => {
 
   it("throws INTERNAL_ERROR when the family meta record is missing", async () => {
     const deps = buildDeps();
-    // Deliberately never seeded — getFamilyMeta returns null (data-integrity edge case).
+    // Entitlements ARE seeded (isolating this check from the separate entitlements-missing
+    // one below) but familyRepo.createFamily was deliberately never called — getFamilyMeta
+    // returns null (data-integrity edge case).
+    deps.entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
 
     await expectAppError(getMyFamily({ uid: "u1", familyId: FAMILY_ID }, deps), "INTERNAL_ERROR");
   });
