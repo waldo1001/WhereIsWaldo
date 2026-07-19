@@ -151,7 +151,7 @@ public struct APIErrorEnvelope: Decodable { public let error: APIErrorBody }
 | 6.2 | `GET /locate-requests/{requestId}` | `pollLocateRequest(requestId:)` |
 | 6.3 | `POST /locate-requests/{requestId}/fulfill` | `fulfillLocateRequest(requestId:fix:)` |
 | 7.1 | `GET /geofences` | `getGeofences(ifNoneMatch:)` → `.notModified` \| `.ok(GeofenceConfig, etag:)` |
-| 7.2 | `PUT /geofences` | `replaceGeofences(_:ifMatch:)` |
+| 7.2 | `PUT /geofences` | `replaceGeofences(_:ifMatch:)` → `(config:, etag:)` — the new ETag response header, cached for the next `getGeofences` |
 | 7.3 | `POST /geofence-events` | `reportGeofenceEvents(_:)` |
 | 7.4 | `GET /geofence-events` | `getGeofenceEventHistory(from:to:userId:limit:cursor:)` |
 
@@ -228,7 +228,7 @@ Default `baseURL` is `https://api.wheres-waldo.invalid/api/v1` — the `.invalid
 
 **Framework note (environment-driven, decided this session):** `Tests/WaldoKitTests/` uses **Swift Testing** (`import Testing`, `@Test`, `#expect`) rather than XCTest. This session's host has only Xcode Command Line Tools installed (no `Xcode.app`), and no `XCTest.framework` exists anywhere on it — `import XCTest` cannot compile here. `Testing.framework` (Swift Testing, XCTest's first-party successor, part of the Swift toolchain since Swift 6) IS present under the Command Line Tools install, but `swift test` doesn't add its framework/plugin search paths automatically in a CLT-only setup; `WaldoKit/Package.swift`'s `WaldoKitTests` target pins them explicitly via `unsafeFlags` (harmless on a full-Xcode host, where these exact paths won't exist and are simply unused) so plain `swift test` works everywhere, including this session. On a full Xcode install (H1-era CI, `macos-14` runners) either framework works fine; Swift Testing was chosen because it is what this session could actually run and verify.
 
-Runs via `swift test` on any host (this session: macOS, headless, no simulator). Coverage (see §10 checklist for the full list): envelope success/error decoding; all 21 `APIErrorCode` cases decode to their case (plus one forward-compat `unknown` case); request-building for every method in §3.2 (URL, HTTP method, headers incl. `X-Device-Id` only where required, JSON body shape); device-registration request construction (first-registration defaults are the server's job, but the client's *request* omits fields it doesn't have, and never sends role/entitlement data); `FixQueue` batch/idempotency behavior (freeze, retry-same-id, split >100, definitive-rejection new-id, transient-failure same-id); token-refresh triggers (push-token refresh ⇒ re-register call recorded; `AUTH_TOKEN_EXPIRED` ⇒ refresh + retry-once observed on a mock client); design-system `Theme` (light/dark both defined, all token fields present); `SignInViewModel` state transitions (idle → loading → signedIn/error). The Xcode app-target build (and any `xcodebuild`/simulator run) is explicitly **not** part of this session's verification — noted, not attempted, since only Command Line Tools (no Xcode.app) are present here.
+Runs via `swift test` on any host (this session: macOS, headless, no simulator). Coverage (see §10 checklist for the full list): envelope success/error decoding; all 21 `APIErrorCode` cases decode to their case (plus one forward-compat `unknown` case); request-building for every one of the 19 methods in §3.2 (URL, HTTP method, headers incl. `X-Device-Id` only where required, JSON body shape); device-registration request construction (first-registration defaults are the server's job, but the client's *request* omits fields it doesn't have, and never sends role/entitlement data); `FixQueue` batch/idempotency behavior (freeze, retry-same-id, split >100, definitive-rejection new-id, transient-failure same-id); token-refresh triggers (push-token refresh ⇒ re-register call recorded; `AUTH_TOKEN_EXPIRED` ⇒ refresh + retry-once observed on a mock client); design-system `Theme` (light/dark both defined, all token fields present); `SignInViewModel` state transitions (idle → loading → signedIn/error). The Xcode app-target build (and any `xcodebuild`/simulator run) is explicitly **not** part of this session's verification — noted, not attempted, since only Command Line Tools (no Xcode.app) are present here.
 
 ---
 
@@ -236,7 +236,7 @@ Runs via `swift test` on any host (this session: macOS, headless, no simulator).
 
 - `Envelope<T>` decodes `{data,features}`; `APIErrorEnvelope` decodes `{error:{code,message,details,requestId}}`.
 - Every one of the 21 `APIErrorCode` catalog values round-trips through decoding; an unrecognized string decodes to `.unknown`.
-- One request-building test per §3.2 row (15 methods) asserting method, path, headers, and body against a 001 example.
+- One request-building test per §3.2 row (19 methods) asserting method, path, headers, and body against a 001 example.
 - `X-Device-Id` header present only on `reportLocations`, `reportGeofenceEvents`, `fulfillLocateRequest`; absent elsewhere.
 - `removeMember` and a `304` `getGeofences` response are handled without attempting envelope decode.
 - `DeviceIdProviding` issues a stable id per user and a fresh one when the user changes.
