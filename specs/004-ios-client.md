@@ -103,7 +103,7 @@ Injected via a custom `EnvironmentKey` (`\.theme`), defaulting to `.light`; the 
 
 ### 2.3 Components (stateless, presentational, `DesignSystem/Components/`)
 
-`WaldoButton` (primary/secondary style), `WaldoCard`, `WaldoListRow`, `StatusChip` (e.g. online/stale/paused), `MapMarkerBubble`, `WaldoNavBar`, `EmptyStateView`, `LoadingStateView`, `ErrorStateView`. Each:
+`WaldoButton` (primary/secondary style), `WaldoCard`, `WaldoListRow`, `StatusChip` (e.g. online/stale/paused), `MapMarkerBubble`, `WaldoNavBar`, `EmptyStateView`, `LoadingStateView`, `ErrorStateView`, plus two I2 additions needed by the feature-screen forms: `WaldoTextField` (a labeled single-line text input) and `WaldoToggleRow` (a label/subtitle row with a trailing themed toggle, e.g. device pause/`trackingEnabled`, geofence `notifyOnEnter`/`notifyOnExit`). Each:
 
 - Reads `@Environment(\.theme)` only — **MUST NOT** declare a literal `Color(...)`, `.font(.system(size:))`, or hardcoded point size.
 - Takes content/state via parameters (strings, an enum for chip status, a boolean for loading, etc.) — zero knowledge of view models, networking, or navigation.

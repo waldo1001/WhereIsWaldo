@@ -5,7 +5,8 @@ import WaldoKit
 /// `colorScheme` and injects `\.theme` (specs/004-ios-client.md §2.2). Everything below this reads
 /// `\.theme`, never `colorScheme` directly. Also the ONLY place that constructs the `AuthProviding`
 /// implementation — swapping `StubAuthProvider` for `FirebaseAuthProvider` once H1 lands
-/// (specs/004 §4, §8) touches only this one line.
+/// (specs/004 §4, §8) touches only this one line — and, as of I2, the single `WaldoAPIClient`
+/// instance every feature screen's view model is constructed with.
 struct RootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var coordinator: AppCoordinator
@@ -14,6 +15,12 @@ struct RootView: View {
     // against AppConfig.default's AuthMode.stubLocal, matching the backend's
     // AUTH_MODE=insecure-local (specs/001 §2.3).
     private let authProvider: AuthProviding = StubAuthProvider()
+    private let apiClient: WaldoAPIClient
+
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        self.apiClient = URLSessionAPIClient(baseURL: AppConfig().baseURL, authProvider: authProvider)
+    }
 
     var body: some View {
         Group {
@@ -25,11 +32,60 @@ struct RootView: View {
                     })
                 )
             case .home:
-                // I2 builds the real home/map screen; this placeholder proves the route seam
-                // works end to end through the design system.
-                EmptyStateView(title: "Signed in", message: "Feature screens land in I2.")
+                HomeScreen(
+                    viewModel: HomeViewModel(apiClient: apiClient),
+                    onSelectMap: { coordinator.showLiveMap() },
+                    onSelectHistory: { userId in coordinator.showHistory(userId: userId) },
+                    onSelectGeofences: { coordinator.showGeofences() },
+                    onSelectLocate: { target, name in coordinator.showLocate(target: target, targetDisplayName: name) },
+                    onSelectDevices: { isParent in coordinator.showDeviceSettings(isParent: isParent) },
+                    onSelectFamily: { coordinator.showFamilyMembers() },
+                    onSelectInvite: { coordinator.showCreateInvite() }
+                )
+            case .liveMap:
+                LiveMapScreen(viewModel: LiveMapViewModel(apiClient: apiClient), renderer: defaultMapRenderer)
+            case .history(let userId, let deviceId):
+                HistoryScreen(viewModel: HistoryViewModel(
+                    apiClient: apiClient, userId: userId, deviceId: deviceId,
+                    fromDate: Self.defaultFromDate(), toDate: Self.defaultToDate()
+                ))
+            case .geofences:
+                GeofencesScreen(viewModel: GeofencesViewModel(apiClient: apiClient))
+            case .locate(let target, let targetDisplayName):
+                LocateScreen(viewModel: LocateViewModel(apiClient: apiClient), target: target, targetDisplayName: targetDisplayName)
+            case .deviceSettings(let isParent):
+                DeviceSettingsScreen(viewModel: DeviceSettingsViewModel(apiClient: apiClient, isParent: isParent))
+            case .familyMembers:
+                FamilyMembersScreen(viewModel: FamilyMembersViewModel(apiClient: apiClient))
+            case .createInvite:
+                CreateInviteScreen(viewModel: CreateInviteViewModel(apiClient: apiClient))
+            case .acceptInvite(let prefillCode):
+                AcceptInviteScreen(viewModel: AcceptInviteViewModel(apiClient: apiClient), prefillInviteCode: prefillCode)
             }
         }
         .environment(\.theme, colorScheme == .dark ? .dark : .light)
+    }
+
+    private var defaultMapRenderer: any MapRendering {
+        #if canImport(MapKit)
+        MapKitRendering()
+        #else
+        ListMapRendering()
+        #endif
+    }
+
+    private static func defaultFromDate() -> String {
+        formattedUTCDate(Calendar(identifier: .gregorian).date(byAdding: .day, value: -7, to: Date()) ?? Date())
+    }
+
+    private static func defaultToDate() -> String {
+        formattedUTCDate(Date())
+    }
+
+    private static func formattedUTCDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
     }
 }
