@@ -1,7 +1,10 @@
 import SwiftUI
 
 /// specs/004-ios-client.md I2 (001 §3.2, §3.5–3.6) — composes ONLY design-system components. Role
-/// toggle + remove actions are only shown for a parent viewer, and never for the viewer's own row.
+/// toggle + remove actions are shown for a parent viewer on EVERY row, including their own — §3.5/
+/// §3.6 only forbid self-demotion/self-removal for the *last* parent, and the server's
+/// `VALIDATION_FAILED`/`lastParent` response is the actual enforcement boundary (surfaced via
+/// `viewModel.lastActionError`); the UI must not pre-emptively hide a legal action.
 public struct FamilyMembersScreen: View {
     @Environment(\.theme) private var theme
     @ObservedObject private var viewModel: FamilyMembersViewModel
@@ -43,13 +46,14 @@ public struct FamilyMembersScreen: View {
                     ErrorStateView(message: lastActionError)
                 }
                 ForEach(members, id: \.userId) { member in
+                    let isSelf = member.userId == me.userId
                     WaldoListRow(title: member.displayName, subtitle: member.role.capitalized) {
-                        if viewModel.isParent && member.userId != me.userId {
+                        if viewModel.isParent {
                             HStack(spacing: theme.spacing.sm) {
-                                WaldoButton(member.role == "parent" ? "Make member" : "Make parent", style: .secondary) {
+                                WaldoButton(roleActionTitle(for: member, isSelf: isSelf), style: .secondary) {
                                     Task { await viewModel.updateRole(userId: member.userId, role: member.role == "parent" ? "member" : "parent") }
                                 }
-                                WaldoButton("Remove", style: .secondary) {
+                                WaldoButton(isSelf ? "Leave family" : "Remove", style: .secondary) {
                                     Task { await viewModel.remove(userId: member.userId) }
                                 }
                             }
@@ -59,5 +63,13 @@ public struct FamilyMembersScreen: View {
             }
             .padding(theme.spacing.md)
         }
+    }
+
+    /// "Step down"/"Leave family" on the signed-in parent's own row read better than "Make
+    /// member"/"Remove" — the server (`lastParent` `VALIDATION_FAILED`) is what actually blocks
+    /// the action when it would leave the family without a parent, not this label choice.
+    private func roleActionTitle(for member: FamilyMember, isSelf: Bool) -> String {
+        guard member.role == "parent" else { return "Make parent" }
+        return isSelf ? "Step down" : "Make member"
     }
 }
