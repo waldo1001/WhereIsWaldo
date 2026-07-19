@@ -15,21 +15,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Structure check only — the app does not exist yet.
+      # Structure check — cheap, always valid regardless of the Gradle project's state.
       - name: structure check
         run: |
           test -f mobile/android/README.md
           test -f mobile/android/.gitignore
-          echo "android scaffold OK (no buildable project yet)"
-      # TODO(session-android): replace the structure check with the real build once
-      # the Gradle project exists. Expected shape:
-      #
-      # - uses: actions/setup-java@v4
-      #   with: { distribution: temurin, java-version: 17 }
-      # - uses: gradle/actions/setup-gradle@v4
-      # - name: unit tests
-      #   run: ./gradlew test
-      #   working-directory: mobile/android
+          test -f mobile/android/settings.gradle.kts
+          echo "android scaffold OK"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      # A1 (specs/003-android-client.md §13.4) deliberately did not commit gradlew /
+      # gradle-wrapper.jar — no JDK/Gradle toolchain existed in that sandbox to produce a
+      # verified one. `gradle-version` installs Gradle directly instead of relying on a
+      # committed wrapper; the step below then generates the wrapper for any later local use.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.4.1"
+      - name: generate Gradle wrapper
+        working-directory: mobile/android
+        run: gradle wrapper --gradle-version 9.4.1 --distribution-type bin
+      - name: unit tests
+        working-directory: mobile/android
+        run: ./gradlew test
+      # TODO(A2/H1): once release signing exists, add:
       # - name: assemble (signed on main)
       #   run: ./gradlew assembleRelease
       #   working-directory: mobile/android
