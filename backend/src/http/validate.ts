@@ -73,3 +73,47 @@ export const reportLocationsRequestSchema = z.object({
   fixes: z.array(locationFixSchema).min(1),
 });
 export type ReportLocationsRequest = z.infer<typeof reportLocationsRequestSchema>;
+
+// specs/001 §3.3 — role of the invitee; emailHint optional, valid email if present.
+export const createInviteRequestSchema = z.object({
+  role: z.enum(["parent", "member"]),
+  emailHint: z.string().email().optional(),
+});
+export type CreateInviteRequest = z.infer<typeof createInviteRequestSchema>;
+
+// specs/001 §3.4 — inviteCode canonicalized by the domain (uppercase, no hyphen) after
+// this schema only checks presence; displayName 1-30 chars (same rule as §3.1).
+export const acceptInviteRequestSchema = z.object({
+  inviteCode: z.string().min(1),
+  displayName: z.string().min(1).max(30),
+});
+export type AcceptInviteRequest = z.infer<typeof acceptInviteRequestSchema>;
+
+// specs/001 §3.5 — at least one of role/displayName required.
+export const updateMemberRequestSchema = z
+  .object({
+    role: z.enum(["parent", "member"]).optional(),
+    displayName: z.string().min(1).max(30).optional(),
+  })
+  .refine((data) => data.role !== undefined || data.displayName !== undefined, {
+    message: "at least one field (role or displayName) is required",
+  });
+export type UpdateMemberRequest = z.infer<typeof updateMemberRequestSchema>;
+
+// specs/001 §3.5/§3.6 — the {userId} path param. Table Storage forbids `/ \ # ?` and
+// control characters in PartitionKey/RowKey (002 §2); rejecting those here surfaces a
+// clean 400 VALIDATION_FAILED instead of a raw SDK RestError leaking out as 500.
+// \p{Cc} = Unicode "control character" category (requires the `u` flag); `/` and `\`
+// are escaped because they're also forbidden Table Storage key characters. Uses `*`
+// (not `+`) so an empty string fails ONLY `.min(1)` below, not this regex too — a single
+// VALIDATION_FAILED issue per problem, instead of a duplicate "userId" field entry.
+const ALLOWED_TABLE_KEY_CHARS = /^[^\p{Cc}/\\#?]*$/u;
+
+export const memberUserIdParamSchema = z.object({
+  userId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(ALLOWED_TABLE_KEY_CHARS, "userId contains characters forbidden in a Table Storage key"),
+});
+export type MemberUserIdParam = z.infer<typeof memberUserIdParamSchema>;

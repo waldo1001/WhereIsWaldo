@@ -82,4 +82,13 @@ export class TableDeviceRepo implements DeviceRepo {
     const devices = await this.listDevices(familyId);
     return devices.length;
   }
+
+  async deleteDevicesByOwner(familyId: string, userId: string): Promise<void> {
+    const devices = await this.listDevices(familyId);
+    await Promise.all(
+      devices
+        .filter((device) => device.ownerUserId === userId)
+        .map((device) => this.client.deleteEntity(familyId, `${DEVICE_PREFIX}${device.deviceId}`)),
+    );
+  }
 }
