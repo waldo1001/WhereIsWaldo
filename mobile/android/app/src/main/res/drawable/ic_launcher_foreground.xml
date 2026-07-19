@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder glyph only — replaced by the design pass. Deliberately a trivial filled dot
+     (standard two-arc circle idiom) rather than a hand-authored complex glyph: there is no
+     Android toolchain in this sandbox to catch a malformed vector path at compile time. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 a28,28 0 1,0 0.01,0 Z" />
+</vector>

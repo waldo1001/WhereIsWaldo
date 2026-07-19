@@ -1,17 +1,42 @@
 # Where's waldo — Android app (Kotlin)
 
-**Not implemented yet.** This directory is reserved for the native Android app, built by its own session against the specs — read [`specs/001-api-contract.md`](../../specs/001-api-contract.md) (wire contract) and [`specs/000-overview.md`](../../specs/000-overview.md) (product + open items O2/O3/O4) before writing any code. A `003-android-client.md` spec must exist before implementation starts (see [`specs/README.md`](../../specs/README.md)).
+Native Android app, Kotlin + Jetpack Compose, single Gradle module (`app/`), min SDK 26 / compile+target SDK 36 / JDK 17. Wire contract: [`specs/001-api-contract.md`](../../specs/001-api-contract.md). Product context + open items: [`specs/000-overview.md`](../../specs/000-overview.md). **The normative spec for everything in this directory is [`specs/003-android-client.md`](../../specs/003-android-client.md)** — module architecture, the design-system token contract, the full endpoint→client mapping, auth/device/push-token/fix-queue models, and what's deliberately deferred. Read it before changing anything here.
 
-## Planned shape
+## Status (A1 — foundation, done; A2 — feature screens, not started)
 
-- **Modules:** single-module app first (`app/`), Kotlin, Jetpack Compose, min SDK 26.
+**Done (A1):** Gradle project skeleton; a typed network client for the complete 001 API (§3–§7); the §10 error catalog as a sealed `ApiError` hierarchy; the design-system layer (tokens + `WaldoTheme` + nine stateless components, light+dark); `AuthProvider` (dev/stub + Firebase placeholder); `PushTokenProvider` (stub); device identity + registration; the offline fix-queue `batchId` idempotency model (in-memory store — see spec §10.4 for why persistence is deferred); a navigation scaffold + one proof screen ("Home"). All logic outside Compose UI and the thin Android-framework touch points (`WaldoApplication`, `MainActivity`, `SharedPreferencesDeviceIdStore`, `AndroidDeviceInfoProvider`, `LocationSyncWorker`) is pure Kotlin/JVM with JUnit tests — no Robolectric, no emulator.
+
+**Not started (A2):** live map (§5.2), history replay (§5.3), geofence editor (§7.1–7.2), locate-to-request UI (§6), device/family settings screens (§4.2–4.3/§3.5–3.6), invites (§3.3–3.4), real permission-request UI, real WorkManager/foreground-service scheduling, Room-backed queue persistence.
+
+**Waived (H1 — Azure/Firebase provisioning, still `human`/pending):** no real `google-services.json` (stays gitignored/absent), no real backend base URL, no real Firebase project. Everything that needs these is stubbed behind an interface — `AuthProvider`, `PushTokenProvider`, `AppConfig`'s `BASE_URL`/`FIREBASE_PROJECT_ID` — and documented in specs/003 §13. Wiring the real thing is a same-interface swap, not a redesign.
+
+## Design-swappable UX
+
+`ui/designsystem/` is the only place a styling constant may exist (color/typography/spacing/corner/elevation tokens, `WaldoTheme`, nine stateless presentational components). Screens compose those components and are driven by ViewModels; nothing outside `ui/designsystem/token/` hardcodes a `Color`, `.dp`, or `.sp`. Both light and dark token sets ship from day one. See specs/003 §4 for the full token vocabulary and default values, and `ui/designsystem/components/ComponentGalleryPreview.kt` for a side-by-side preview of every component in both themes.
+
+## Build
+
+```bash
+cd mobile/android
+./gradlew test    # JUnit unit tests (pure JVM — no emulator, no Robolectric)
+./gradlew build    # full compile
+```
+
+Gradle (Kotlin DSL), AGP 9.2.0, Kotlin 2.3.0, Gradle 9.4.1, JDK 17. `gradlew`/`gradle-wrapper.jar` are **not** committed — this repo's dev/CI sandboxes had no JDK/Gradle toolchain to produce a verified wrapper jar. CI (`.github/workflows/android.yml`) installs Gradle directly (`gradle/actions/setup-gradle` with a pinned `gradle-version`) and runs `gradle wrapper --gradle-version 9.4.1 --distribution-type bin` to generate it before every build; do the same locally the first time (`gradle wrapper --gradle-version 9.4.1 --distribution-type bin`, requires a local Gradle install) — after that `./gradlew` works normally.
+
+## Shape (implemented — see specs/003 §3 for the full package tree)
+
+- **`network/`** — DTOs matching every 001 §3–§7 wire shape, `ApiError`/`ApiErrorMapper` (the §10 catalog), `ApiResult`, five port interfaces (`FamilyApi`/`DevicesApi`/`LocationsApi`/`LocateApi`/`GeofenceApi`) implemented by `WaldoApiClient` on top of the raw `WaldoApiService` Retrofit interface (Retrofit + OkHttp + kotlinx.serialization).
+- **`auth/`** — `AuthProvider` (Firebase Auth ID-token source), `DevAuthProvider` (unsigned-JWT dev stub), `FirebaseAuthProviderStub` (H1 placeholder).
+- **`push/`** — `PushTokenProvider` (FCM registration-token source, distinct from the auth ID token), `StubPushTokenProvider`.
+- **`device/`** — `DeviceIdProvider`/`DeviceIdStore` (per-uid UUIDv4), `DeviceInfoProvider`, `DeviceRegistrar` (§4.1).
+- **`queue/`** — `FixQueueStore`/`InMemoryFixQueueStore` (§5.1's `batchId` idempotency model), `LocationSyncCoordinator`, `worker/` (WorkManager scaffold, untested by design).
+- **`pushmessages/`** — FCM `data.type` discriminator parser (§8).
+- **`ui/designsystem/`, `ui/nav/`, `ui/home/`** — see above.
+
+## Original planning notes (still accurate for A2)
+
 - **Location sync:** `FusedLocationProviderClient`; intervals ≥ 15 min via **WorkManager** periodic work; 5/10-min intervals require a **foreground service** with a persistent low-priority notification (Play-policy compliant for family tracking). "1 day" = first unlock/network of the device-local day (000 §O3).
 - **Geofencing:** `GeofencingClient` (native, battery-efficient); re-register on `GEOFENCE_CONFIG_CHANGED` push or `geofenceEtag` change (001 §5.1 piggyback).
 - **Push:** Firebase Cloud Messaging; handle the four data-message types of 001 §8. `LOCATE_REQUEST` → high-priority wake → single high-accuracy fix → `POST /locate-requests/{id}/fulfill`.
-- **Auth:** Firebase Auth; attach ID token as `Authorization: Bearer`; re-`POST /devices` on every FCM token refresh (001 §4.1).
-- **Offline:** queue fixes locally (Room), upload as batches with a stable `batchId` for idempotent retry (001 §5.1).
-- **Permissions:** `ACCESS_FINE_LOCATION` → `ACCESS_BACKGROUND_LOCATION` staged request; Play Store background-location review prep (000 §O2).
-
-## Build (once implemented)
-
-Gradle (Kotlin DSL), JDK 17. CI: `.github/workflows/android.yml` (currently a structure check; real build steps are stubbed there as TODO).
+- **Permissions:** `ACCESS_FINE_LOCATION` → `ACCESS_BACKGROUND_LOCATION` staged request; Play Store background-location review prep (000 §O2; staged flow documented in specs/003 §11).

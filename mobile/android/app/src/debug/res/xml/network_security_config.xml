@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Security (docs/security-review-checklist.md §5): debug-build-only override of
+  `app/src/main/res/xml/network_security_config.xml` — standard Android build-variant resource
+  precedence (debug source set wins over main for a same-named resource) scopes this carve-out
+  to debug builds exclusively; the release build type has no `src/release/res/xml/` override,
+  so it falls back to main's strict, no-exemption config. TLS only otherwise, no blanket
+  cleartext exemption.
+
+  The single carve-out is 10.0.2.2, the Android emulator's documented, non-routable loopback
+  alias to the host machine used only by the debug BuildConfig.BASE_URL to reach a locally
+  running `func start` (backend/README.md) — it is not a real/third-party endpoint and cannot
+  be reached from a real device on a real network. Remove this carve-out at H1 once local dev
+  no longer needs a plaintext loopback target.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
