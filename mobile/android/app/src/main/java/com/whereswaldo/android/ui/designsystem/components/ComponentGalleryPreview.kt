@@ -51,6 +51,23 @@ private fun ComponentGallery(modifier: Modifier = Modifier) {
         WaldoMapMarkerBubble(label = "Eric", isStale = false)
         WaldoMapMarkerBubble(label = "Noor", isStale = true)
 
+        WaldoTextField(
+            value = "Home",
+            onValueChange = {},
+            label = "Name",
+            placeholder = "e.g. Home",
+        )
+        WaldoTextField(
+            value = "",
+            onValueChange = {},
+            label = "Radius (m)",
+            isError = true,
+            supportingText = "Must be between 100 and 5000",
+        )
+
+        WaldoSwitchRow(title = "Tracking enabled", checked = true, onCheckedChange = {})
+        WaldoSwitchRow(title = "Notify on enter", checked = false, onCheckedChange = {}, subtitle = "Geofence: Home")
+
         WaldoEmptyState(title = "No devices yet", message = "Register a device to see it here.")
         WaldoLoadingState(message = "Loading…")
         WaldoErrorState(title = "Something went wrong", message = "Couldn't reach the server.", onRetry = {})
