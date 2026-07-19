@@ -8,7 +8,7 @@
 |---|---|
 | Specs 000/001/002 | ✅ Complete and normative (product, full API contract, storage schema) |
 | Repo scaffold, CI workflows | ✅ In place; `backend` workflow gates test + mutation, deploy auto-skips until Azure exists |
-| Backend | ⬜ **Config only — zero implementation code.** `src/index.ts` is a tsc placeholder. **This is deliberately unimplemented: TDD from the first line is the process.** |
+| Backend | 🔵 **B1 merged** (create family §3.1 + register device §4.1 + http plumbing + full ports surface; 46 tests, mutation 99.37%). B2/B3 in progress. `src/index.ts` deleted. |
 | Android / iOS / web | ⬜ Not started (placeholder READMEs describe the planned shape) |
 | Azure/Firebase provisioning | ⬜ Manual, human-run: `docs/azure-setup.md` |
 
@@ -53,9 +53,9 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 
 | ID | Scope | Depends on | Status |
 |---|---|---|---|
-| B1 | Create family + register device + http plumbing (001 §3.1, §4.1; detailed checklist above) | — | todo |
-| B2 | Locations: report batch §5.1 + latest §5.2 (idempotency markers, last-known only-newer, piggyback) | B1 | todo |
-| B3 | Invites & members §3.2–3.6 | B1 | todo |
+| B1 | Create family + register device + http plumbing (001 §3.1, §4.1; detailed checklist above) | — | done |
+| B2 | Locations: report batch §5.1 + latest §5.2 (idempotency markers, last-known only-newer, piggyback) | B1 | in-progress |
+| B3 | Invites & members §3.2–3.6 | B1 | in-progress |
 | B4 | Locate flow §6 + FCM adapter §8 | B2 | todo |
 | B5 | Geofences §7 (config ETag flow, events, flag-filtered fan-out) | B2, B4 | todo |
 | B6 | History §5.3/§7.4 (blob store + cursor) + storage-adapter integration tests vs Azurite (002 §6) | B2 | todo |
@@ -68,5 +68,7 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 ## Dev-loop log
 
 *(appended by /dev-loop — newest first: date · task · agent rounds · review findings fixed · merge commit)*
+
+- **2026-07-19 · B1** · 2 coding rounds (initial + 1 fix) · reviews: code+security both ran; **1 finding fixed** — `firebaseJoseVerifier.ts` now enforces §2.2 "iat in the past" (jose omits it without `maxTokenAge`); **1 finding deferred to B2** — surviving `validate.ts` mutant (`.join(".")` vs `.join("")`), unobservable on B1's flat schemas, must be killed by a nested-path test in B2 batch validation · spec change: **specs/001 §4.1 pinned** (omitted token on update = preserve). Result: 46 tests, mutation 99.37% (break 60), build clean · merge `708a6fa`.
 
 Keep this file updated at the end of every session (status table, backlog statuses, log).
