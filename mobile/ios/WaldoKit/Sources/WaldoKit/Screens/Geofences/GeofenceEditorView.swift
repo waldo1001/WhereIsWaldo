@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// specs/004-ios-client.md I2 (001 §7.1–7.2) — the add/edit form for a single circular geofence:
-/// name, coordinates, radius (100–5000 m per §7.2), and the two notify flags. Composes ONLY
-/// design-system components; the radius `Slider` is tinted via `theme.colors.primary` (a token
-/// reference, never a literal `Color`).
+/// name, icon (free string ≤ 30 chars, §7.1), coordinates, radius (100–5000 m per §7.2), and the
+/// two notify flags. Composes ONLY design-system components; the radius `Slider` is tinted via
+/// `theme.colors.primary` (a token reference, never a literal `Color`).
 public struct GeofenceEditorView: View {
     @Environment(\.theme) private var theme
     @State private var name: String
@@ -39,6 +39,7 @@ public struct GeofenceEditorView: View {
             ScrollView {
                 VStack(spacing: theme.spacing.md) {
                     WaldoTextField("Name", text: $name, placeholder: "Home")
+                    WaldoTextField("Icon", text: $icon, placeholder: "home")
                     WaldoTextField("Latitude", text: $lat, placeholder: "51.0543")
                     WaldoTextField("Longitude", text: $lon, placeholder: "3.7174")
                     VStack(alignment: .leading, spacing: theme.spacing.xs) {
@@ -64,9 +65,14 @@ public struct GeofenceEditorView: View {
     private func save() {
         guard let latValue = Double(lat), let lonValue = Double(lon) else { return }
         let id = originalId ?? GeofenceIdGenerating.makeId(from: name, existingIds: existingIds)
+        // specs/001 §7.1 — icon is a free string ≤ 30 chars, client-rendered only; clamp
+        // defensively (a review-gate finding — the field was previously captured but never
+        // user-editable, so it silently stayed "home").
+        let trimmedIcon = String(icon.prefix(30))
         let geofence = Geofence(
             geofenceId: id, name: name.isEmpty ? "Unnamed" : name, lat: latValue, lon: lonValue,
-            radiusM: radiusM, icon: icon, notifyOnEnter: notifyOnEnter, notifyOnExit: notifyOnExit
+            radiusM: radiusM, icon: trimmedIcon.isEmpty ? "home" : trimmedIcon,
+            notifyOnEnter: notifyOnEnter, notifyOnExit: notifyOnExit
         )
         onSave(geofence)
     }
