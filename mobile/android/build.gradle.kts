@@ -1,9 +1,14 @@
 // Top-level build file: plugin versions are declared once here (with apply false) so a future
 // second module (specs/003-android-client.md still plans single-module for A1) applies them
 // without repeating — and can't drift out of sync — a version.
+//
+// H1 CI note (2026-07-20): AGP 9.0+ has built-in Kotlin support and the standalone
+// `org.jetbrains.kotlin.android` plugin is no longer applied (it errors: "the
+// 'org.jetbrains.kotlin.android' plugin is no longer required for Kotlin support since AGP
+// 9.0" — kotl.in/gradle/agp-built-in-kotlin). The Compose/serialization Kotlin compiler
+// sub-plugins are unaffected and still applied the same way.
 plugins {
     id("com.android.application") version "9.2.0" apply false
-    id("org.jetbrains.kotlin.android") version "2.3.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.0" apply false
     id("org.jetbrains.kotlin.plugin.serialization") version "2.3.0" apply false
 }

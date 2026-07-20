@@ -1,6 +1,7 @@
+// H1 CI note (2026-07-20): `org.jetbrains.kotlin.android` removed — AGP 9.0+ built-in Kotlin
+// support makes it redundant (and a hard error to apply alongside it); see build.gradle.kts.
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
