@@ -12,7 +12,7 @@ import com.whereswaldo.android.network.dto.FamilyMeResponseDto
 import com.whereswaldo.android.network.dto.ListDevicesResponseDto
 import com.whereswaldo.android.network.dto.MemberDto
 import com.whereswaldo.android.network.dto.UpdateMemberRequestDto
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,7 +43,7 @@ class SettingsStateHolderTest {
             listDevicesResult = ApiResult.Success(ListDevicesResponseDto(listOf(familyDevice())), defaultFeatures())
         }
         val holder = SettingsStateHolder(familyApi, devicesApi, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is SettingsUiState.Content)
@@ -60,7 +60,7 @@ class SettingsStateHolderTest {
         }
         val devicesApi = FakeDevicesApi()
         val holder = SettingsStateHolder(familyApi, devicesApi, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         assertTrue(holder.state.value is SettingsUiState.Error)
         assertEquals(0, devicesApi.listDevicesCallCount)
@@ -72,7 +72,7 @@ class SettingsStateHolderTest {
             listDevicesResult = ApiResult.Failure(ApiError.InternalError("boom", null))
         }
         val holder = SettingsStateHolder(FakeFamilyApi(), devicesApi, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         assertTrue(holder.state.value is SettingsUiState.Error)
     }
@@ -87,7 +87,7 @@ class SettingsStateHolderTest {
             )
         }
         val holder = SettingsStateHolder(FakeFamilyApi(), devicesApi, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.updateDeviceSettings("d1", trackingEnabled = false)
 
@@ -115,7 +115,7 @@ class SettingsStateHolderTest {
             listDevicesResult = ApiResult.Success(ListDevicesResponseDto(listOf(familyDevice())), defaultFeatures())
         }
         val holder = SettingsStateHolder(familyApi, devicesApi, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.updateDeviceSettings("d1", trackingEnabled = false)
 
@@ -134,7 +134,7 @@ class SettingsStateHolderTest {
             )
         }
         val holder = SettingsStateHolder(familyApi, FakeDevicesApi(), backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.updateMember("uid-member", role = "parent")
 
@@ -146,7 +146,7 @@ class SettingsStateHolderTest {
     @Test
     fun `removeMember by a parent removes the member from the local roster`() = runTest {
         val holder = SettingsStateHolder(FakeFamilyApi(), FakeDevicesApi(), backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.removeMember("uid-member")
 
@@ -167,7 +167,7 @@ class SettingsStateHolderTest {
             )
         }
         val holder = SettingsStateHolder(familyApi, FakeDevicesApi(), backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.removeMember("uid-parent")
 

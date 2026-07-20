@@ -30,7 +30,12 @@ public final class GeofencesViewModel: ObservableObject {
     }
 
     public func load() async {
-        state = .loading
+        // Only blank out to `.loading` on the very first load. A subsequent refresh keeps
+        // showing the last-known list while it's in flight — and a `304` (unchanged) must leave
+        // that state untouched rather than getting stuck on `.loading` forever (§7.1).
+        if cachedETag == nil {
+            state = .loading
+        }
         do {
             let result = try await apiClient.getGeofences(ifNoneMatch: cachedETag)
             apply(result)

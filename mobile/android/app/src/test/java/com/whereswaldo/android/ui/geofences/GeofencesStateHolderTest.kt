@@ -7,7 +7,7 @@ import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.ETagged
 import com.whereswaldo.android.network.dto.GeofenceConfigResponseDto
 import com.whereswaldo.android.network.dto.GeofenceDto
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -29,7 +29,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is GeofencesUiState.Content)
@@ -44,7 +44,7 @@ class GeofencesStateHolderTest {
             getGeofencesResult = ApiResult.Failure(ApiError.FamilyNotFound("no family", "r_1"))
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         assertTrue(holder.state.value is GeofencesUiState.Error)
     }
@@ -69,7 +69,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.upsertGeofence(draft(id = "gf_school", name = "School"))
         var state = holder.state.value as GeofencesUiState.Content
@@ -93,7 +93,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.removeGeofence("gf_home")
 
@@ -114,7 +114,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.save()
 
@@ -137,7 +137,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
         holder.upsertGeofence(homeDto.toUiForTest().copy(name = "Home (pending edit)"))
 
         // The conflict handler re-fetches; script what that second getGeofences() call returns —
@@ -182,7 +182,7 @@ class GeofencesStateHolderTest {
             )
         }
         val holder = GeofencesStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         holder.save()
 

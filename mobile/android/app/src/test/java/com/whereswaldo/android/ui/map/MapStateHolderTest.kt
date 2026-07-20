@@ -7,7 +7,7 @@ import com.whereswaldo.android.network.ApiResult
 import com.whereswaldo.android.network.dto.LatestDeviceDto
 import com.whereswaldo.android.network.dto.LatestLocationsResponseDto
 import com.whereswaldo.android.network.dto.LatestMemberDto
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -50,7 +50,7 @@ class MapStateHolderTest {
         }
 
         val holder = MapStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is MapUiState.Content)
@@ -75,7 +75,7 @@ class MapStateHolderTest {
         }
 
         val holder = MapStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value as MapUiState.Content
         assertTrue(state.members.single().devices.isEmpty())
@@ -106,7 +106,7 @@ class MapStateHolderTest {
         }
 
         val holder = MapStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val device = (holder.state.value as MapUiState.Content).members.single().devices.single()
         assertEquals(false, device.hasLocation)
@@ -120,7 +120,7 @@ class MapStateHolderTest {
         }
 
         val holder = MapStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is MapUiState.Error)
@@ -136,7 +136,7 @@ class MapStateHolderTest {
             )
         }
         val holder = MapStateHolder(api, backgroundScope)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(1, api.getLatestLocationsCallCount)
 
         holder.refresh()

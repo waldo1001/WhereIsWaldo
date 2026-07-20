@@ -9,7 +9,7 @@ import com.whereswaldo.android.fakes.FakeDevicesApi
 import com.whereswaldo.android.fakes.InMemoryDeviceIdStore
 import com.whereswaldo.android.network.ApiError
 import com.whereswaldo.android.network.ApiResult
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -33,7 +33,7 @@ class HomeStateHolderTest {
         val authProvider = FakeAuthProvider(initialState = AuthState.SignedOut)
         val holder = HomeStateHolder(authProvider, registrar(FakeDevicesApi()), backgroundScope)
 
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(HomeUiState.SignedOut, holder.state.value)
     }
@@ -44,7 +44,7 @@ class HomeStateHolderTest {
         val fakeApi = FakeDevicesApi()
         val holder = HomeStateHolder(authProvider, registrar(fakeApi), backgroundScope)
 
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is HomeUiState.SignedIn)
@@ -62,7 +62,7 @@ class HomeStateHolderTest {
         }
         val holder = HomeStateHolder(authProvider, registrar(fakeApi), backgroundScope)
 
-        advanceUntilIdle()
+        runCurrent()
 
         val state = holder.state.value
         assertTrue(state is HomeUiState.SignedIn)
