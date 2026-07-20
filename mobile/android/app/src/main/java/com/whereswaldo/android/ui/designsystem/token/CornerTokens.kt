@@ -15,10 +15,11 @@ data class WaldoCornerTokens(
     val pill: Dp,
 )
 
+// Waldo design system (design/waldo-design-system/) — softer, friendlier corners.
 val WaldoCorner = WaldoCornerTokens(
-    sm = 4.dp,
-    md = 8.dp,
-    lg = 16.dp,
+    sm = 8.dp,
+    md = 12.dp,
+    lg = 20.dp,
     pill = 999.dp,
 )
 

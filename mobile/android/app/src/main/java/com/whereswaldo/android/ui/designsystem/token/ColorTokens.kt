@@ -25,33 +25,37 @@ data class WaldoColorTokens(
     val outline: Color,
 )
 
-/** Placeholder design (specs/003 §4.2) — fully swappable, this is the point of the seam. */
+/**
+ * "Waldo — Family Location Design System" (design/waldo-design-system/, 2026-07-20).
+ * Calm teal-forward palette; every text/essential-icon pairing verified WCAG 2.1 AA
+ * (ratios in design/waldo-design-system/README.md and specs/003 §4.2). Fully swappable via this seam.
+ */
 val LightWaldoColors = WaldoColorTokens(
-    primary = Color(0xFF2962FF),
+    primary = Color(0xFF00696E),
     onPrimary = Color(0xFFFFFFFF),
-    secondary = Color(0xFF00897B),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1C1E),
-    surfaceVariant = Color(0xFFE7E9EC),
-    danger = Color(0xFFD32F2F),
+    secondary = Color(0xFF4C5FD5),
+    surface = Color(0xFFFAFAF7),
+    onSurface = Color(0xFF1B1D1C),
+    surfaceVariant = Color(0xFFEEEEE9),
+    danger = Color(0xFFC0362C),
     onDanger = Color(0xFFFFFFFF),
-    success = Color(0xFF2E7D32),
-    warning = Color(0xFFF9A825),
-    outline = Color(0xFF79747E),
+    success = Color(0xFF1E7D46),
+    warning = Color(0xFF8A5A00),
+    outline = Color(0xFFC9C8C2),
 )
 
 val DarkWaldoColors = WaldoColorTokens(
-    primary = Color(0xFF82B1FF),
-    onPrimary = Color(0xFF00296B),
-    secondary = Color(0xFF4DB6AC),
-    surface = Color(0xFF121316),
-    onSurface = Color(0xFFE3E2E6),
-    surfaceVariant = Color(0xFF44474A),
-    danger = Color(0xFFEF5350),
-    onDanger = Color(0xFF601410),
-    success = Color(0xFF66BB6A),
-    warning = Color(0xFFFFD54F),
-    outline = Color(0xFF8E9099),
+    primary = Color(0xFF4CD4D9),
+    onPrimary = Color(0xFF00312F),
+    secondary = Color(0xFFA9B4FF),
+    surface = Color(0xFF17181A),
+    onSurface = Color(0xFFECECE6),
+    surfaceVariant = Color(0xFF24262A),
+    danger = Color(0xFFF2867B),
+    onDanger = Color(0xFF490A05),
+    success = Color(0xFF5FD08A),
+    warning = Color(0xFFE4B44C),
+    outline = Color(0xFF3A3D42),
 )
 
 val LocalWaldoColors = staticCompositionLocalOf { LightWaldoColors }

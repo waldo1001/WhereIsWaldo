@@ -42,17 +42,20 @@ public struct ColorTokens: Equatable {
         self.outline = outline
     }
 
+    // "Waldo — Family Location Design System" (design/waldo-design-system/, 2026-07-20).
+    // Calm teal-forward palette; every text/essential-icon pairing verified WCAG 2.1 AA
+    // (ratios in design/waldo-design-system/README.md and specs/004 §2.1).
     public static let light = ColorTokens(
-        primary: Color(hex: 0x2F6FED), onPrimary: Color(hex: 0xFFFFFF), secondary: Color(hex: 0x5856D6),
-        surface: Color(hex: 0xFFFFFF), onSurface: Color(hex: 0x1C1C1E), surfaceVariant: Color(hex: 0xF2F2F7),
-        danger: Color(hex: 0xD70015), onDanger: Color(hex: 0xFFFFFF), success: Color(hex: 0x248A3D),
-        warning: Color(hex: 0xFF9500), outline: Color(hex: 0xC6C6C8)
+        primary: Color(hex: 0x00696E), onPrimary: Color(hex: 0xFFFFFF), secondary: Color(hex: 0x4C5FD5),
+        surface: Color(hex: 0xFAFAF7), onSurface: Color(hex: 0x1B1D1C), surfaceVariant: Color(hex: 0xEEEEE9),
+        danger: Color(hex: 0xC0362C), onDanger: Color(hex: 0xFFFFFF), success: Color(hex: 0x1E7D46),
+        warning: Color(hex: 0x8A5A00), outline: Color(hex: 0xC9C8C2)
     )
 
     public static let dark = ColorTokens(
-        primary: Color(hex: 0x6C9BFF), onPrimary: Color(hex: 0x04174D), secondary: Color(hex: 0x9D9CFF),
-        surface: Color(hex: 0x1C1C1E), onSurface: Color(hex: 0xF2F2F7), surfaceVariant: Color(hex: 0x2C2C2E),
-        danger: Color(hex: 0xFF6961), onDanger: Color(hex: 0x340003), success: Color(hex: 0x63D471),
-        warning: Color(hex: 0xFFB340), outline: Color(hex: 0x48484A)
+        primary: Color(hex: 0x4CD4D9), onPrimary: Color(hex: 0x00312F), secondary: Color(hex: 0xA9B4FF),
+        surface: Color(hex: 0x17181A), onSurface: Color(hex: 0xECECE6), surfaceVariant: Color(hex: 0x24262A),
+        danger: Color(hex: 0xF2867B), onDanger: Color(hex: 0x490A05), success: Color(hex: 0x5FD08A),
+        warning: Color(hex: 0xE4B44C), outline: Color(hex: 0x3A3D42)
     )
 }

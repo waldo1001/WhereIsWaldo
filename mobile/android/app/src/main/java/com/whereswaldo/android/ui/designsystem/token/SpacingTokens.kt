@@ -23,13 +23,14 @@ data class WaldoSpacingTokens(
     val xxl: Dp,
 )
 
+// Waldo design system (design/waldo-design-system/) — unified cross-platform spacing scale.
 val WaldoSpacing = WaldoSpacingTokens(
     xs = 4.dp,
     sm = 8.dp,
-    md = 16.dp,
-    lg = 24.dp,
-    xl = 32.dp,
-    xxl = 48.dp,
+    md = 12.dp,
+    lg = 16.dp,
+    xl = 24.dp,
+    xxl = 32.dp,
 )
 
 val LocalWaldoSpacing = staticCompositionLocalOf { WaldoSpacing }

@@ -77,34 +77,36 @@ A dedicated layer under `ui/designsystem/` is the **only** place styling constan
 
 **Kotlin identifier note:** `2xl` is not a legal Kotlin property name (cannot start with a digit). The Kotlin property is named `xxl` and MUST be treated as the same semantic token as `2xl` by any future design-generation tool targeting this contract — documented here once so the mapping is unambiguous.
 
-### 4.2 Default values (placeholder design — fully swappable)
+### 4.2 Default values — "Waldo — Family Location Design System" (2026-07-20; `design/waldo-design-system/`)
+
+The implemented design (replaced the initial placeholder). Calm teal-forward palette; every text/essential-icon pairing meets WCAG 2.1 AA (ratios in `design/waldo-design-system/README.md`). Fully swappable — these are values, not contract.
 
 Light:
 
 | Token | Value | Token | Value |
 |---|---|---|---|
-| `primary` | `#2962FF` | `danger` | `#D32F2F` |
+| `primary` | `#00696E` | `danger` | `#C0362C` |
 | `onPrimary` | `#FFFFFF` | `onDanger` | `#FFFFFF` |
-| `secondary` | `#00897B` | `success` | `#2E7D32` |
-| `surface` | `#FFFFFF` | `warning` | `#F9A825` |
-| `onSurface` | `#1A1C1E` | `outline` | `#79747E` |
-| `surfaceVariant` | `#E7E9EC` | | |
+| `secondary` | `#4C5FD5` | `success` | `#1E7D46` |
+| `surface` | `#FAFAF7` | `warning` | `#8A5A00` |
+| `onSurface` | `#1B1D1C` | `outline` | `#C9C8C2` |
+| `surfaceVariant` | `#EEEEE9` | | |
 
 Dark:
 
 | Token | Value | Token | Value |
 |---|---|---|---|
-| `primary` | `#82B1FF` | `danger` | `#EF5350` |
-| `onPrimary` | `#00296B` | `onDanger` | `#601410` |
-| `secondary` | `#4DB6AC` | `success` | `#66BB6A` |
-| `surface` | `#121316` | `warning` | `#FFD54F` |
-| `onSurface` | `#E3E2E6` | `outline` | `#8E9099` |
-| `surfaceVariant` | `#44474A` | | |
+| `primary` | `#4CD4D9` | `danger` | `#F2867B` |
+| `onPrimary` | `#00312F` | `onDanger` | `#490A05` |
+| `secondary` | `#A9B4FF` | `success` | `#5FD08A` |
+| `surface` | `#17181A` | `warning` | `#E4B44C` |
+| `onSurface` | `#ECECE6` | `outline` | `#3A3D42` |
+| `surfaceVariant` | `#24262A` | | |
 
-Typography (same in both themes — only color varies by theme): `displayLarge` 36/44sp regular, `titleLarge` 22/28sp medium, `titleMedium` 16/24sp medium, `bodyLarge` 16/24sp regular, `bodyMedium` 14/20sp regular, `labelSmall` 11/16sp medium.
+Typography (same in both themes — only color varies by theme): `displayLarge` 34/40sp bold (tracking −0.68sp), `titleLarge` 22/28sp semibold (tracking −0.22sp), `titleMedium` 17/22sp semibold, `bodyLarge` 17/24sp regular, `bodyMedium` 15/20sp regular, `labelSmall` 12/16sp medium (tracking 0.4sp).
 
-Spacing (dp): `xs`=4, `sm`=8, `md`=16, `lg`=24, `xl`=32, `2xl`(`xxl`)=48.
-Corner (dp): `sm`=4, `md`=8, `lg`=16, `pill`=999.
+Spacing (dp): `xs`=4, `sm`=8, `md`=12, `lg`=16, `xl`=24, `2xl`(`xxl`)=32.
+Corner (dp): `sm`=8, `md`=12, `lg`=20, `pill`=999.
 Elevation (dp): `level0`=0, `level1`=1, `level2`=3, `level3`=6.
 
 ### 4.3 Structure

@@ -20,9 +20,12 @@ public struct TypographyTokens: Equatable {
         self.labelSmall = labelSmall
     }
 
+    // Waldo design system (design/waldo-design-system/) — SF Pro system font. `titleLarge` is
+    // Semibold (was Bold) per the unified type scale. Line-height/tracking (design README) are
+    // applied by components at render; the token contract's type is `Font`.
     public static let standard = TypographyTokens(
         displayLarge: .system(size: 34, weight: .bold),
-        titleLarge: .system(size: 22, weight: .bold),
+        titleLarge: .system(size: 22, weight: .semibold),
         titleMedium: .system(size: 17, weight: .semibold),
         bodyLarge: .system(size: 17, weight: .regular),
         bodyMedium: .system(size: 15, weight: .regular),

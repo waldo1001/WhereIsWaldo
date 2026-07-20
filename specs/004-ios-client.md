@@ -52,28 +52,28 @@ The visual design MUST be fully replaceable later without touching any logic, na
 
 ### 2.1 Token vocabulary (normative — identical names to the Android client, `specs/003-android-client.md`, for one design → both platforms)
 
-**Colors** (`ColorTokens`, one instance per scheme):
+**Colors** (`ColorTokens`, one instance per scheme) — "Waldo — Family Location Design System" (2026-07-20, `design/waldo-design-system/`); WCAG 2.1 AA verified (ratios in that README):
 
 | Token | Light (default) | Dark (default) |
 |---|---|---|
-| `primary` | `#2F6FED` | `#6C9BFF` |
-| `onPrimary` | `#FFFFFF` | `#04174D` |
-| `secondary` | `#5856D6` | `#9D9CFF` |
-| `surface` | `#FFFFFF` | `#1C1C1E` |
-| `onSurface` | `#1C1C1E` | `#F2F2F7` |
-| `surfaceVariant` | `#F2F2F7` | `#2C2C2E` |
-| `danger` | `#D70015` | `#FF6961` |
-| `onDanger` | `#FFFFFF` | `#340003` |
-| `success` | `#248A3D` | `#63D471` |
-| `warning` | `#FF9500` | `#FFB340` |
-| `outline` | `#C6C6C8` | `#48484A` |
+| `primary` | `#00696E` | `#4CD4D9` |
+| `onPrimary` | `#FFFFFF` | `#00312F` |
+| `secondary` | `#4C5FD5` | `#A9B4FF` |
+| `surface` | `#FAFAF7` | `#17181A` |
+| `onSurface` | `#1B1D1C` | `#ECECE6` |
+| `surfaceVariant` | `#EEEEE9` | `#24262A` |
+| `danger` | `#C0362C` | `#F2867B` |
+| `onDanger` | `#FFFFFF` | `#490A05` |
+| `success` | `#1E7D46` | `#5FD08A` |
+| `warning` | `#8A5A00` | `#E4B44C` |
+| `outline` | `#C9C8C2` | `#3A3D42` |
 
 **Typography** (`TypographyTokens`, identical across schemes — a `TypeStyle { font: Font, weight, size }` per role):
 
 | Role | Size (pt) | Weight |
 |---|---|---|
 | `displayLarge` | 34 | bold |
-| `titleLarge` | 22 | bold |
+| `titleLarge` | 22 | semibold |
 | `titleMedium` | 17 | semibold |
 | `bodyLarge` | 17 | regular |
 | `bodyMedium` | 15 | regular |
@@ -81,7 +81,7 @@ The visual design MUST be fully replaceable later without touching any logic, na
 
 **Spacing** (`SpacingTokens`, `CGFloat` points): `xs=4, sm=8, md=12, lg=16, xl=24, xxl=32`.
 
-**Corner radius** (`CornerRadiusTokens`, `CGFloat` points): `sm=4, md=8, lg=16, pill=9999` (pill = always fully rounded regardless of view height).
+**Corner radius** (`CornerRadiusTokens`, `CGFloat` points): `sm=8, md=12, lg=20, pill=999` (pill = always fully rounded regardless of view height).
 
 **Elevation** (`ElevationTokens`, a shadow spec per level — SwiftUI has no native elevation, so each level is `{ radius: CGFloat, y: CGFloat, opacity: Double }`): `level0 = {0,0,0}` (no shadow), `level1 = {2,1,0.08}`, `level2 = {4,2,0.12}`, `level3 = {8,4,0.16}`.
 

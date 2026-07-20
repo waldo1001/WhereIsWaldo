@@ -15,5 +15,6 @@ public struct CornerRadiusTokens: Equatable {
         self.pill = pill
     }
 
-    public static let standard = CornerRadiusTokens(sm: 4, md: 8, lg: 16, pill: 9999)
+    // Waldo design system (design/waldo-design-system/) — softer, friendlier corners.
+    public static let standard = CornerRadiusTokens(sm: 8, md: 12, lg: 20, pill: 999)
 }
