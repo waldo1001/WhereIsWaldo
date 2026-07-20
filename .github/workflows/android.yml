@@ -41,6 +41,37 @@ jobs:
       - name: generate Gradle wrapper
         working-directory: mobile/android
         run: gradle wrapper --gradle-version 9.4.1 --distribution-type bin
+      # H1 (specs/003 §13): the google-services Gradle plugin (app/build.gradle.kts) requires
+      # app/google-services.json to be present at build time. The REAL file (from the Firebase
+      # console) is gitignored and only ever exists on a developer's machine — CI needs a
+      # structurally valid placeholder so the plugin's package-name check succeeds without a real
+      # Firebase project. Obviously-fake values throughout (docs/security-review-checklist.md
+      # §1's "placeholders MUST be obviously fake" — no `AIza…` prefix, which the checklist's own
+      # secret-scan grep matches); this file never authenticates against anything real.
+      - name: generate placeholder google-services.json
+        working-directory: mobile/android
+        run: |
+          cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "waldo-ci-placeholder",
+              "storage_bucket": "waldo-ci-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": { "package_name": "com.whereswaldo.android" }
+                },
+                "oauth_client": [],
+                "api_key": [{ "current_key": "CI-PLACEHOLDER-NOT-A-REAL-API-KEY" }],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
       - name: unit tests
         working-directory: mobile/android
         run: ./gradlew test
