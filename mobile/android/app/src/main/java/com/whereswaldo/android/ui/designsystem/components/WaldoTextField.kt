@@ -13,12 +13,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.VisualTransformation
 import com.whereswaldo.android.ui.designsystem.WaldoTheme
 
 /**
  * A stateless, presentational single-line (by default) text input — added in A2 for the geofence
- * editor (name/lat/lon/radius), invite-code entry, and display-name fields. Reads only
- * [WaldoTheme] tokens (specs/003-android-client.md §4.3); border width reuses
+ * editor (name/lat/lon/radius), invite-code entry, and display-name fields; [visualTransformation]
+ * added at H1 for the sign-in screen's password field (`PasswordVisualTransformation()`). Reads
+ * only [WaldoTheme] tokens (specs/003-android-client.md §4.3); border width reuses
  * [WaldoTheme.elevation]'s `level1`, matching [WaldoMapMarkerBubble]'s existing convention for
  * hairline strokes so no raw `.dp` literal appears even inside this design-system file.
  */
@@ -34,6 +36,7 @@ fun WaldoTextField(
     singleLine: Boolean = true,
     enabled: Boolean = true,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         if (label != null) {
@@ -52,6 +55,7 @@ fun WaldoTextField(
             enabled = enabled,
             singleLine = singleLine,
             keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
             textStyle = WaldoTheme.typography.bodyLarge.copy(color = WaldoTheme.colors.onSurface),
             cursorBrush = SolidColor(WaldoTheme.colors.primary),
             modifier = Modifier

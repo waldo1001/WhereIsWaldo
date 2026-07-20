@@ -1,6 +1,6 @@
 package com.whereswaldo.android.auth
 
-import kotlinx.coroutines.test.runTest
+import com.whereswaldo.android.fakes.FakeAuthProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -10,19 +10,20 @@ class AuthProviderFactoryTest {
 
     @Test
     fun `InsecureLocal mode yields a DevAuthProvider`() {
-        val provider = AuthProviderFactory.create(AuthMode.InsecureLocal, firebaseProjectId = "waldo-dev")
+        val provider = AuthProviderFactory.create(AuthMode.InsecureLocal, firebaseProjectId = "waldo-dev") {
+            error("must not be invoked for InsecureLocal")
+        }
 
         assertTrue(provider is DevAuthProvider)
     }
 
     @Test
-    fun `Firebase mode yields a stub that throws when actually used`() = runTest {
-        val provider = AuthProviderFactory.create(AuthMode.Firebase, firebaseProjectId = "waldo-prod")
+    fun `Firebase mode invokes the lazy firebaseAuthProvider supplier`() {
+        val fake = FakeAuthProvider()
 
-        assertTrue(provider is FirebaseAuthProviderStub)
-        assertThrows(NotImplementedError::class.java) {
-            kotlinx.coroutines.runBlocking { provider.currentIdToken() }
-        }
+        val provider = AuthProviderFactory.create(AuthMode.Firebase, firebaseProjectId = "waldo-prod") { fake }
+
+        assertTrue(provider === fake)
     }
 
     @Test

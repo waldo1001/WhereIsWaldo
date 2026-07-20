@@ -48,6 +48,15 @@ class DevAuthProvider(
         state.value = AuthState.SignedOut
     }
 
+    /** Dev shortcut (specs/003 §7): any non-blank pair signs in with `uid = email` — no real
+     * credential exchange, matching this provider's existing dev-only nature. */
+    override suspend fun signIn(email: String, password: String) {
+        if (email.isBlank() || password.isBlank()) {
+            throw AuthSignInException("Enter both an email and a password.")
+        }
+        state.value = AuthState.SignedIn(email)
+    }
+
     private fun buildUnsignedJwt(uid: String): String {
         val nowSeconds = clock()
         val header = "{\"alg\":\"none\",\"typ\":\"JWT\"}"

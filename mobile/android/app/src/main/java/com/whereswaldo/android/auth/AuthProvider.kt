@@ -3,10 +3,9 @@ package com.whereswaldo.android.auth
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Abstraction over the Firebase Auth ID-token source (specs/003-android-client.md §7). The real
- * Firebase-backed implementation lands at H1 ([FirebaseAuthProviderStub] is its placeholder);
- * [DevAuthProvider] is the A1 dev/stub implementation used when `BuildConfig.AUTH_MODE ==
- * "insecure-local"`.
+ * Abstraction over the Firebase Auth ID-token source (specs/003-android-client.md §7).
+ * [FirebaseAuthProvider] is the real, H1-wired implementation; [DevAuthProvider] is the A1 dev/
+ * stub implementation used when `BuildConfig.AUTH_MODE == "insecure-local"`.
  *
  * Pure Kotlin/JVM — no `android.*` import — unit-testable without an emulator.
  */
@@ -22,4 +21,18 @@ interface AuthProvider {
     suspend fun currentIdToken(forceRefresh: Boolean = false): String?
 
     suspend fun signOut()
+
+    /**
+     * Email/password sign-in (specs/003 §7). On success, [authState] transitions to
+     * [AuthState.SignedIn] — callers (e.g. `WaldoNavHost`) observe that directly rather than
+     * relying on this function's return. Throws [AuthSignInException] on failure.
+     */
+    suspend fun signIn(email: String, password: String)
 }
+
+/**
+ * A sign-in failure, already mapped to a user-facing [message] — never the raw Firebase SDK/
+ * server text (docs/security-review-checklist.md's "no raw error text" principle, mirrored from
+ * `network/ApiErrorUserMessage.kt`).
+ */
+class AuthSignInException(message: String) : Exception(message)

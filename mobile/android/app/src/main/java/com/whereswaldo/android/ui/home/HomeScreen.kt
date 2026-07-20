@@ -63,7 +63,7 @@ fun HomeScreen(
                         title = "Not signed in",
                         message = "Sign in to see your family's locations.",
                     )
-                    WaldoButton(text = "Sign in (dev)", onClick = onSignIn)
+                    WaldoButton(text = "Sign in", onClick = onSignIn)
                 }
 
                 is HomeUiState.SignedIn -> {

@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.whereswaldo.android.auth.DevAuthProvider
 import com.whereswaldo.android.ui.designsystem.WaldoTheme
 import com.whereswaldo.android.ui.home.HomeViewModel
 import com.whereswaldo.android.ui.home.HomeViewModelFactory
@@ -22,16 +21,9 @@ class MainActivity : ComponentActivity() {
                 val homeViewModel: HomeViewModel = viewModel(
                     factory = HomeViewModelFactory(container.authProvider, container.deviceRegistrar),
                 )
-                WaldoNavHost(
-                    container = container,
-                    homeViewModel = homeViewModel,
-                    onSignIn = {
-                        // Dev-only: AUTH_MODE=insecure-local wires a DevAuthProvider; there is
-                        // nothing to sign in to in AUTH_MODE=firebase yet (H1/A2 replace this
-                        // with a real Firebase Auth sign-in flow).
-                        (container.authProvider as? DevAuthProvider)?.signInDev("dev-user-1")
-                    },
-                )
+                // Sign-in wiring (dev shortcut vs real Firebase screen) lives inside WaldoNavHost
+                // itself now (specs/003 §7, §12) — it owns the NavController the real path needs.
+                WaldoNavHost(container = container, homeViewModel = homeViewModel)
             }
         }
     }

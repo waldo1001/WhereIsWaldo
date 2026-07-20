@@ -33,4 +33,14 @@ class FakeAuthProvider(
     override suspend fun signOut() {
         state.value = AuthState.SignedOut
     }
+
+    /** Scripted before a test to simulate the outcome of a real sign-in attempt. */
+    var signInResult: Result<Unit> = Result.success(Unit)
+
+    val signInCalls = mutableListOf<Pair<String, String>>()
+
+    override suspend fun signIn(email: String, password: String) {
+        signInCalls.add(email to password)
+        signInResult.onSuccess { state.value = AuthState.SignedIn(email) }.getOrThrow()
+    }
 }

@@ -20,4 +20,5 @@ sealed class Destinations(val route: String) {
     data object Locate : Destinations("locate")
     data object Settings : Destinations("settings")
     data object Invites : Destinations("invites")
+    data object SignIn : Destinations("sign-in")
 }

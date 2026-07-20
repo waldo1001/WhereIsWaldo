@@ -4,6 +4,9 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+    // H1 (specs/003 §13): requires app/google-services.json (gitignored, real file supplied by
+    // the user from the Firebase console) to be present at build time.
+    id("com.google.gms.google-services")
 }
 
 // A2 (specs/003-android-client.md §13, `ui/map/MapRenderer.kt`): a real map-tile SDK needs a
@@ -94,6 +97,12 @@ dependencies {
 
     // Offline fix-queue periodic worker scaffold (specs/003 §10.5) — no enqueue call sites wired yet.
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+
+    // Real Firebase Auth (specs/003 §7, H1) — FirebaseAuthProvider's only consumer.
+    implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
+    implementation("com.google.firebase:firebase-auth")
+    // `Task<T>.await()` bridge so FirebaseAuthProvider can be a plain suspend-based AuthProvider.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.1")
 
     // Networking (specs/003 §5): Retrofit + OkHttp + kotlinx.serialization, chosen over Ktor for
     // its mature Android ecosystem, suspend-fun support, and predictable Response<T> based

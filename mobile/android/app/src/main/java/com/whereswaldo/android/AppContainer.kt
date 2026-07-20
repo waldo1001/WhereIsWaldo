@@ -1,9 +1,11 @@
 package com.whereswaldo.android
 
 import android.content.Context
+import com.google.firebase.auth.FirebaseAuth
 import com.whereswaldo.android.auth.AuthProvider
 import com.whereswaldo.android.auth.AuthProviderFactory
 import com.whereswaldo.android.auth.AuthState
+import com.whereswaldo.android.auth.FirebaseAuthProvider
 import com.whereswaldo.android.config.AppConfig
 import com.whereswaldo.android.device.AndroidDeviceInfoProvider
 import com.whereswaldo.android.device.DeviceIdProvider
@@ -40,8 +42,9 @@ class AppContainer(context: Context) {
         mapsApiKey = BuildConfig.MAPS_API_KEY,
     )
 
-    val authProvider: AuthProvider =
-        AuthProviderFactory.create(appConfig.authMode, appConfig.firebaseProjectId)
+    val authProvider: AuthProvider = AuthProviderFactory.create(appConfig.authMode, appConfig.firebaseProjectId) {
+        FirebaseAuthProvider(FirebaseAuth.getInstance())
+    }
 
     val pushTokenProvider: PushTokenProvider = StubPushTokenProvider()
 
