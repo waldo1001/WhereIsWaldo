@@ -20,7 +20,7 @@ Every backlog task B1–B6 / A1–A2 / I1–I2 is **merged**. The frontier is no
 1. **H1 (you):** run `docs/azure-setup.md` — provision Azure (Storage + Function App managed identity, OIDC federated creds), Firebase (Auth + FCM service account → `FCM_SERVICE_ACCOUNT_JSON` app setting), branch protection. Drop the real `google-services.json` / `GoogleService-Info.plist` into the (gitignored) mobile config slots.
 2. **Deploy + smoke-test** the backend (CI deploy job auto-runs on `main` once Azure exists), then run the §11 smoke against a live endpoint.
 3. **Compile the apps** on real toolchains: Android needs Gradle/SDK (`./gradlew test`); iOS needs Xcode (`swift test` on `macos-14` CI + create the `.xcodeproj` app-target project, documented in specs/004 §1.1). Apply the **iOS Location Push entitlement** with Apple (000 §O1) — do this early.
-4. **Design pass:** feed `docs/design-prompt.md` to a design tool to generate the visual design, then drop the resulting tokens into each app's `DesignSystem` layer (nothing else changes).
+4. ~~**Design pass:** feed `docs/design-prompt.md` to a design tool…~~ ✅ **Done (2026-07-20):** the "Waldo — Family Location Design System" tokens (`design/waldo-design-system/`) are applied to both apps' `DesignSystem` layers (colors light+dark, type scale, spacing, corners). Values only — no logic/component/screen changes; specs/003 §4.2 + specs/004 §2.1 updated. iOS `WaldoKit` builds clean; verify Android render + both in-app light/dark once the toolchains are up.
 5. Clear the **tech-debt** items listed under `## Dev-loop log` (apiCalls placement, error-log hardening, remaining integration tests).
 
 The detailed original B1 checklist is preserved below for reference.
@@ -85,6 +85,8 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 ## Dev-loop log
 
 *(appended by /dev-loop — newest first: date · task · agent rounds · review findings fixed · merge commit)*
+
+- **2026-07-20 · Design tokens** · applied the delivered "Waldo Design System" (`design/waldo-design-system/`) into both apps' `DesignSystem` seams — colors (light+dark), unified type scale, spacing, corners; elevation + iOS spacing already matched. Values-only (no logic/component/screen changes); self-verified: iOS `swift build`+`--build-tests` clean, no `Color`/`.system`-font leakage outside `DesignSystem` on either app, values match the WCAG-AA-verified handoff exactly. specs/003 §4.2 + specs/004 §2.1 updated · commit `a878f35`.
 
 **Mobile CI-compile status (H1-waiver reality):** mobile code is merged **review-gated, not locally compile-verified** — Android has no Gradle/SDK in the build env (A1 is CI-compiled on the `android.yml` runner); iOS host has only Xcode CLT (no `Xcode.app`), so `WaldoKit` (SPM) `swift build`s green but the test *runtime* can't execute locally — the `ios.yml` `package` job runs real `swift test` on `macos-14`. Both apps' `.xcodeproj`/Gradle wrapper jar / real Firebase config are the first things to verify when H1 lands. This is expected per the "code now, CICD/smoketest later" directive.
 
