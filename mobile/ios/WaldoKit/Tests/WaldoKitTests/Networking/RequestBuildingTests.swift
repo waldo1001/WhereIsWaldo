@@ -4,6 +4,15 @@ import Foundation
 
 /// specs/004-ios-client.md §3.2, §9, §10 — one request-building test per 001 §1.6 endpoint (19
 /// total): method, path, headers (incl. `X-Device-Id` only where required), and body shape.
+///
+/// H1 CI note (2026-07-20): `.serialized` is required, not stylistic. Every test installs its
+/// expectations via the process-global `MockURLProtocol.requestHandler` static immediately before
+/// firing a request; Swift Testing runs `@Test`s within a suite concurrently by default, so without
+/// this trait two tests race on that shared static and observe each other's request/response —
+/// the exact failure signature (wrong method/path expected, `keyNotFound` for another endpoint's
+/// field) seen the first time this suite actually executed in CI (previously only compile-verified,
+/// never run, on the CLT-only sandbox this project was authored in).
+@Suite(.serialized)
 struct RequestBuildingTests {
     let baseURL = URL(string: "https://api.wheres-waldo.invalid/api/v1")!
 

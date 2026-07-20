@@ -8,6 +8,7 @@ import com.whereswaldo.android.network.dto.CreateInviteRequestDto
 import com.whereswaldo.android.network.dto.CreateInviteResponseDto
 import com.whereswaldo.android.network.dto.CreateLocateRequestRequestDto
 import com.whereswaldo.android.network.dto.DeviceDto
+import com.whereswaldo.android.network.dto.Envelope
 import com.whereswaldo.android.network.dto.FamilyMeResponseDto
 import com.whereswaldo.android.network.dto.FulfillLocateRequestRequestDto
 import com.whereswaldo.android.network.dto.FulfillResponseDto
