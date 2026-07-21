@@ -2,6 +2,7 @@ package com.whereswaldo.android.ui.map
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.whereswaldo.android.ui.groups.GroupMapMemberUi
 
 /**
  * Abstraction over the actual map-tile view (A2 task brief: "put the actual map-tile view behind
@@ -16,8 +17,21 @@ import androidx.compose.ui.Modifier
  * Markers and the roster list are always rendered through `ui/designsystem` components
  * ([com.whereswaldo.android.ui.designsystem.components.WaldoMapMarkerBubble]) regardless of which
  * [MapRenderer] is installed, so the map stays design-swappable even after a real tile SDK lands.
+ *
+ * A5 addition (specs/003-android-client.md §12.2): [RenderGroup] reuses this same seam for
+ * `GroupMapScreen` — "rendered through the same `MapRenderer` seam" per spec — rather than a
+ * second renderer interface, so a future real tile SDK only ever needs one implementation wired
+ * in [com.whereswaldo.android.AppContainer]. It is a **distinctly-named** method, not a `Render`
+ * overload: `List<RosterMemberUi>` and `List<GroupMapMemberUi>` erase to the same JVM signature
+ * (`List`), so two same-named methods differing only in that generic parameter would be a
+ * platform declaration clash, not a valid overload.
  */
 interface MapRenderer {
     @Composable
     fun Render(members: List<RosterMemberUi>, modifier: Modifier)
+
+    /** specs/005-temporary-groups.md §3 — position-only: no device/battery fields anywhere in
+     * [GroupMapMemberUi], unlike [RosterMemberUi]'s [RosterDeviceUi] children. */
+    @Composable
+    fun RenderGroup(members: List<GroupMapMemberUi>, modifier: Modifier)
 }
