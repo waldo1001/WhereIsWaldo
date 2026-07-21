@@ -125,8 +125,71 @@ describe("domain/device/registerDevice", () => {
     expect(stored?.locationPushToken).toBe("existing-location-token");
   });
 
-  it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
+  it("registers a device for a family-less caller under the implicit free plan (no Entitlements row, §4.1/002 §2.6)", async () => {
     const deps = buildDeps();
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: null,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(true);
+    expect(result.device).toMatchObject({ deviceId: DEVICE_ID, ownerUserId: "u1" });
+    expect(result.features.subscriptionStatus).toBe("free");
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    expect(stored?.ownerUserId).toBe("u1");
+  });
+
+  it("stores a family-less caller's devices under their own uid partition (002 §2.4 — devices keyed by owner), isolated from other family-less callers reusing the same deviceId", async () => {
+    const deps = buildDeps();
+
+    await registerDevice(
+      {
+        uid: "u1",
+        familyId: null,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "u1's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+    const result = await registerDevice(
+      {
+        uid: "u2",
+        familyId: null,
+        body: { deviceId: DEVICE_ID, platform: "ios", model: "u2's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    // No deviceIdInUse conflict — each family-less caller has their own partition.
+    expect(result.created).toBe(true);
+    expect(result.device.ownerUserId).toBe("u2");
+    const u1Device = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    const u2Device = await deps.deviceRepo.getDevice("u2", DEVICE_ID);
+    expect(u1Device?.model).toBe("u1's phone");
+    expect(u2Device?.model).toBe("u2's phone");
+  });
+
+  it("throws LIMIT_EXCEEDED for a family-less caller at the per-caller maxDevices cap", async () => {
+    const deps = buildDeps();
+    for (let i = 0; i < 10; i += 1) {
+      deps.deviceRepo.seed("u1", {
+        deviceId: `seed-device-${i}`,
+        ownerUserId: "u1",
+        platform: "android",
+        model: "Pixel",
+        appVersion: "1.0.0",
+        deviceName: "Pixel",
+        pushInvalid: false,
+        syncIntervalMinutes: 15,
+        trackingEnabled: true,
+        registeredAt: "2026-07-01T00:00:00Z",
+        lastSeenAt: "2026-07-01T00:00:00Z",
+      });
+    }
 
     await expectAppError(
       registerDevice(
@@ -137,7 +200,8 @@ describe("domain/device/registerDevice", () => {
         },
         deps,
       ),
-      "FAMILY_NOT_FOUND",
+      "LIMIT_EXCEEDED",
+      { limit: "maxDevices" },
     );
   });
 
