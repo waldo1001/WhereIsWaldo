@@ -79,6 +79,10 @@ final class ControllableAuthProvider: AuthProviding {
         currentUserId = nil
     }
 
+    func startPhoneVerification(phoneNumberE164: String) async throws {}
+
+    func confirmCode(_ code: String) async throws {}
+
     func resume(with result: Result<String, Error>) {
         continuation?.resume(with: result)
         continuation = nil
