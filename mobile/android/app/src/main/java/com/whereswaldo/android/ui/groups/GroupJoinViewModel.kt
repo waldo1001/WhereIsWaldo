@@ -9,10 +9,9 @@ import kotlinx.coroutines.launch
 
 /** Thin Android `ViewModel` wrapper — all logic lives in [GroupJoinStateHolder] (specs/003-
  * android-client.md §14; same convention as `HomeViewModel`/`MapViewModel`). */
-class GroupJoinViewModel(groupsApi: GroupsApi, needsDisplayName: Boolean) : ViewModel() {
+class GroupJoinViewModel(groupsApi: GroupsApi, val needsDisplayName: Boolean) : ViewModel() {
     private val stateHolder = GroupJoinStateHolder(groupsApi, needsDisplayName)
     val state: StateFlow<GroupJoinUiState> = stateHolder.state
-    val needsDisplayName: Boolean = needsDisplayName
 
     fun join(code: String, displayName: String?) {
         viewModelScope.launch { stateHolder.join(code, displayName) }

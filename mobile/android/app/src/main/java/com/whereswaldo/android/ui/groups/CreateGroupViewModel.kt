@@ -16,11 +16,10 @@ import kotlinx.coroutines.launch
 class CreateGroupViewModel(
     groupsApi: GroupsApi,
     limits: PlanLimits?,
-    needsDisplayName: Boolean,
+    val needsDisplayName: Boolean,
 ) : ViewModel() {
     private val stateHolder = CreateGroupStateHolder(groupsApi, limits, needsDisplayName)
     val state: StateFlow<CreateGroupUiState> = stateHolder.state
-    val needsDisplayName: Boolean = needsDisplayName
 
     fun validate(name: String, endsAtMillis: Long?, expiryPolicy: String, displayName: String?): String? =
         stateHolder.validate(name, endsAtMillis, expiryPolicy, displayName)

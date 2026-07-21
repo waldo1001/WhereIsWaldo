@@ -88,6 +88,10 @@ fun HomeScreen(
                         WaldoButton(text = "Geofences", onClick = { onNavigate(Destinations.Geofences.route) }, style = WaldoButtonStyle.Secondary)
                         WaldoButton(text = "Settings", onClick = { onNavigate(Destinations.Settings.route) }, style = WaldoButtonStyle.Secondary)
                         WaldoButton(text = "Invites", onClick = { onNavigate(Destinations.Invites.route) }, style = WaldoButtonStyle.Secondary)
+                        // A5 addition (specs/005-temporary-groups.md, specs/003 §12.2): works
+                        // without a family (§1.5.4) — the one destination that's never a dead
+                        // end for a family-less signed-in user, unlike every button above.
+                        WaldoButton(text = "Groups", onClick = { onNavigate(Destinations.Groups.route) }, style = WaldoButtonStyle.Secondary)
                     }
                 }
             }
