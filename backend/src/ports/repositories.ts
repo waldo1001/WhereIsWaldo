@@ -309,3 +309,29 @@ export interface GroupExpiryRepo {
    * (`yyyy-MM-dd`) of the group's next lifecycle action. */
   putExpiryRow(bucketDate: string, groupId: string, action: GroupExpiryAction): Promise<void>;
 }
+
+// ---------------------------------------------------------------------------
+// GroupLastKnown (specs/002 §2.12, specs/001 §5.1 fan-out side effect + §12.10 — this
+// task, B11). One row per member per group — deliberately field-minimal (position-only,
+// 005 §3): no deviceId, batteryPct, source, altitudeM, speedMps, bearingDeg. Same
+// owner(group)-partition + only-newer idiom as LastKnown (002 §2.5).
+// ---------------------------------------------------------------------------
+
+export interface GroupLastKnownRecord {
+  userId: string;
+  lat: number;
+  lon: number;
+  accuracyM: number;
+  recordedAt: string;
+  receivedAt: string;
+  /** Frozen at write time from the reporting device's settings — feeds isStale (001 §12.10). */
+  syncIntervalMinutes: number;
+}
+
+export interface GroupLastKnownRepo {
+  /** Overwrite only if incoming recordedAt > stored recordedAt (same only-newer idiom as
+   * LastKnown §2.5); returns whether it wrote. */
+  upsertIfNewer(groupId: string, record: GroupLastKnownRecord): Promise<boolean>;
+  /** One groupId partition scan = the group map read (001 §12.10). */
+  listByGroup(groupId: string): Promise<GroupLastKnownRecord[]>;
+}
