@@ -14,7 +14,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.whereswaldo.android.AppContainer
 import com.whereswaldo.android.auth.AuthState
-import com.whereswaldo.android.auth.DevAuthProvider
 import com.whereswaldo.android.ui.geofences.GeofencesRoute
 import com.whereswaldo.android.ui.geofences.GeofencesViewModel
 import com.whereswaldo.android.ui.geofences.GeofencesViewModelFactory
@@ -45,14 +44,18 @@ import com.whereswaldo.android.ui.signin.SignInViewModelFactory
  * [Destinations.Locate]/[Destinations.Settings]/[Destinations.Invites] — each screen's
  * `ViewModel` built from [container]'s single [com.whereswaldo.android.network.WaldoApiClient]
  * (it implements all five 001 §3–§7 port interfaces, so every factory here just narrows it to the
- * one it needs). H1 adds [Destinations.SignIn] (§7): [container]'s `authProvider` is a
- * [DevAuthProvider] in `insecure-local` builds (dev shortcut, no screen) or the real
- * `FirebaseAuthProvider` otherwise (navigates here); a [LaunchedEffect] on `authState` pops this
- * screen once sign-in succeeds, since that's when `authState` flips to `SignedIn`.
+ * one it needs). [Destinations.SignIn] (§7) hosts the phone sign-in screen regardless of
+ * `container`'s `authProvider` implementation; a [LaunchedEffect] on `authState` pops this screen
+ * once sign-in succeeds, since that's when `authState` flips to `SignedIn`.
  *
  * [Destinations.Locate] takes its target from a locally-`remember`ed `pendingLocateTarget` (set
  * by tapping a roster row in [MapRoute]) rather than a nav-graph path argument — see
  * [Destinations]'s doc for why.
+ *
+ * Phone sign-in (specs/006-phone-auth.md): [Destinations.SignIn] is reached the same way in every
+ * build variant, dev included — the former `DevAuthProvider` short-circuit (a dev sign-in button
+ * bypassing the screen entirely) is removed, so the two-step phone UI is actually exercised
+ * locally against `AUTH_MODE=insecure-local` (003 §7).
  */
 @Composable
 fun WaldoNavHost(
@@ -73,12 +76,7 @@ fun WaldoNavHost(
         composable(Destinations.Home.route) {
             HomeRoute(
                 viewModel = homeViewModel,
-                onSignIn = {
-                    when (val provider = container.authProvider) {
-                        is DevAuthProvider -> provider.signInDev("dev-user-1")
-                        else -> navController.navigate(Destinations.SignIn.route)
-                    }
-                },
+                onSignIn = { navController.navigate(Destinations.SignIn.route) },
                 onNavigate = { route -> navController.navigate(route) },
             )
         }

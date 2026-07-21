@@ -1,10 +1,12 @@
 package com.whereswaldo.android
 
+import android.app.Activity
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.whereswaldo.android.auth.AuthProvider
 import com.whereswaldo.android.auth.AuthProviderFactory
 import com.whereswaldo.android.auth.AuthState
+import com.whereswaldo.android.auth.CurrentActivityProvider
 import com.whereswaldo.android.auth.FirebaseAuthProvider
 import com.whereswaldo.android.config.AppConfig
 import com.whereswaldo.android.device.AndroidDeviceInfoProvider
@@ -42,8 +44,22 @@ class AppContainer(context: Context) {
         mapsApiKey = BuildConfig.MAPS_API_KEY,
     )
 
+    /** Registered/cleared by `MainActivity` (specs/003 §7) — Firebase phone-auth needs a live
+     * `Activity` for Play Integrity / reCAPTCHA app verification; only [FirebaseAuthProvider]
+     * consumes this, via [currentActivityProvider]. */
+    private var currentActivity: Activity? = null
+    private val currentActivityProvider = CurrentActivityProvider { currentActivity }
+
+    fun onActivityStarted(activity: Activity) {
+        currentActivity = activity
+    }
+
+    fun onActivityStopped(activity: Activity) {
+        if (currentActivity === activity) currentActivity = null
+    }
+
     val authProvider: AuthProvider = AuthProviderFactory.create(appConfig.authMode, appConfig.firebaseProjectId) {
-        FirebaseAuthProvider(FirebaseAuth.getInstance())
+        FirebaseAuthProvider(FirebaseAuth.getInstance(), currentActivityProvider)
     }
 
     val pushTokenProvider: PushTokenProvider = StubPushTokenProvider()

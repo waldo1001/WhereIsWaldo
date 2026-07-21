@@ -2,25 +2,33 @@ package com.whereswaldo.android.auth
 
 import java.nio.charset.StandardCharsets
 import java.util.Base64
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 
 /**
- * Dev/stub [AuthProvider] (specs/003-android-client.md §7), active when
- * `BuildConfig.AUTH_MODE == "insecure-local"`. Keeps an in-memory signed-in dev user and
- * constructs an **unsigned** JWT-shaped bearer token at call time — matching
- * 001-api-contract.md §2.3's "Firebase Auth emulator / hand-crafted JWTs" local-dev shape (the
- * backend's `AUTH_MODE=insecure-local` trusts `sub` as-is, no signature check). No literal token
- * string is embedded anywhere in source or tests — only this construction code — so nothing
- * here can be mistaken for a real credential by a secret scan.
+ * Dev/stub [AuthProvider] (specs/006-phone-auth.md §5, specs/003-android-client.md §7), active
+ * when `BuildConfig.AUTH_MODE == "insecure-local"`. Implements the same two-step phone shape as
+ * [FirebaseAuthProvider] entirely locally — no SMS, no Firebase — so the phone sign-in UI is
+ * fully exercisable and testable without the Firebase console phone-auth setup (H2):
+ * `startPhoneVerification` validates the normalized number (§3) and immediately reports code-sent;
+ * `confirmCode` accepts **any non-blank code** and signs in with `uid = <normalized E.164 number>`
+ * (the phone-shaped analogue of the previous "uid = email" dev shortcut).
+ *
+ * Keeps an in-memory signed-in dev user and constructs an **unsigned** JWT-shaped bearer token at
+ * call time — matching 001-api-contract.md §2.3's "Firebase Auth emulator / hand-crafted JWTs"
+ * local-dev shape (the backend's `AUTH_MODE=insecure-local` trusts `sub` as-is, no signature
+ * check). No literal token string is embedded anywhere in source or tests — only this
+ * construction code — so nothing here can be mistaken for a real credential by a secret scan.
  *
  * `java.util.Base64` (JDK standard library, natively available since API 26 — this project's
  * exact `minSdk`) is used rather than the still-evolving `kotlin.io.encoding.Base64` stdlib API,
  * to avoid any doubt about that API's experimental/stable status at the pinned Kotlin version
  * with no toolchain available here to check.
  *
- * NOT for production use — see [FirebaseAuthProviderStub] for the H1 replacement.
+ * NOT for production use — see [FirebaseAuthProvider] for the real implementation.
  */
 class DevAuthProvider(
     private val firebaseProjectId: String,
@@ -33,7 +41,12 @@ class DevAuthProvider(
     )
     override val authState: StateFlow<AuthState> = state.asStateFlow()
 
-    /** Dev-only helper — signs in a fake uid without any real credential exchange. */
+    /** The in-flight verification's normalized number (006 §4.1's provider-internal session
+     * state) — set by the last [startPhoneVerification] call that passed §3 validation. */
+    private var pendingPhoneNumber: String? = null
+
+    /** Dev-only helper — signs in a fake uid directly, without the two-step dance (specs/006 §5:
+     * "`signInDev(uid)` stays for tests"). */
     fun signInDev(uid: String) {
         state.value = AuthState.SignedIn(uid)
     }
@@ -46,15 +59,31 @@ class DevAuthProvider(
 
     override suspend fun signOut() {
         state.value = AuthState.SignedOut
+        pendingPhoneNumber = null
     }
 
-    /** Dev shortcut (specs/003 §7): any non-blank pair signs in with `uid = email` — no real
-     * credential exchange, matching this provider's existing dev-only nature. */
-    override suspend fun signIn(email: String, password: String) {
-        if (email.isBlank() || password.isBlank()) {
-            throw AuthSignInException("Enter both an email and a password.")
+    /** Dev-mode two-step shape (006 §5): re-validates [phoneNumberE164] against §3 (defensive —
+     * callers are expected to already have normalized it) and immediately emits `CodeSent`; no
+     * SMS, no Firebase. An unnormalizable number fails client-side with `INVALID_PHONE_NUMBER`
+     * and never "sends" anything. */
+    override fun startPhoneVerification(phoneNumberE164: String): Flow<PhoneVerificationEvent> = flow {
+        val normalized = PhoneNumberNormalizer.normalize(phoneNumberE164)
+        if (normalized == null) {
+            emit(PhoneVerificationEvent.Failed(PhoneAuthError.INVALID_PHONE_NUMBER))
+            return@flow
         }
-        state.value = AuthState.SignedIn(email)
+        pendingPhoneNumber = normalized
+        emit(PhoneVerificationEvent.CodeSent)
+    }
+
+    /** Dev-mode shortcut (006 §5): any non-blank [code] signs in with `uid` = the normalized
+     * E.164 number from the last [startPhoneVerification] call — no real credential exchange. */
+    override suspend fun confirmCode(code: String) {
+        if (code.isBlank()) {
+            throw PhoneAuthException(PhoneAuthError.INVALID_CODE)
+        }
+        val uid = pendingPhoneNumber ?: throw PhoneAuthException(PhoneAuthError.CODE_EXPIRED)
+        state.value = AuthState.SignedIn(uid)
     }
 
     private fun buildUnsignedJwt(uid: String): String {

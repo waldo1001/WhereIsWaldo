@@ -19,8 +19,9 @@ import com.whereswaldo.android.ui.designsystem.WaldoTheme
 /**
  * A stateless, presentational single-line (by default) text input — added in A2 for the geofence
  * editor (name/lat/lon/radius), invite-code entry, and display-name fields; [visualTransformation]
- * added at H1 for the sign-in screen's password field (`PasswordVisualTransformation()`). Reads
- * only [WaldoTheme] tokens (specs/003-android-client.md §4.3); border width reuses
+ * was added at H1 for the (now-deleted, specs/006-phone-auth.md) email/password sign-in screen's
+ * password field — kept as a general-purpose parameter, unused by the phone sign-in screen (A3).
+ * Reads only [WaldoTheme] tokens (specs/003-android-client.md §4.3); border width reuses
  * [WaldoTheme.elevation]'s `level1`, matching [WaldoMapMarkerBubble]'s existing convention for
  * hairline strokes so no raw `.dp` literal appears even inside this design-system file.
  */
