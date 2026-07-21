@@ -1,11 +1,12 @@
-// specs/002 §2.2 `Users` table — the auth hot path. Integration-tested later; no unit
-// tests here (thin adapter, excluded from mutation).
+// specs/002 §2.2 `Users` table — the auth hot path + the group `group:{groupId}` reverse
+// index. Integration-tested later; no unit tests here (thin adapter, excluded from mutation).
 
-import { RestError } from "@azure/data-tables";
+import { odata, RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
-import type { Role, UserProfile, UserRepo } from "../../ports/repositories";
+import type { GroupMembershipIndexEntry, GroupRole, Role, UserProfile, UserRepo } from "../../ports/repositories";
 
 const PROFILE_ROW_KEY = "profile";
+const GROUP_PREFIX = "group:";
 
 function isNotFound(err: unknown): boolean {
   return err instanceof RestError && err.statusCode === 404;
@@ -47,5 +48,31 @@ export class TableUserRepo implements UserRepo {
 
   async deleteProfile(userId: string): Promise<void> {
     await this.client.deleteEntity(userId, PROFILE_ROW_KEY);
+  }
+
+  async addGroupMembership(userId: string, entry: GroupMembershipIndexEntry): Promise<void> {
+    await this.client.createEntity({
+      partitionKey: userId,
+      rowKey: `${GROUP_PREFIX}${entry.groupId}`,
+      role: entry.role,
+      joinedAt: entry.joinedAt,
+    });
+  }
+
+  async listGroupMemberships(userId: string): Promise<GroupMembershipIndexEntry[]> {
+    const memberships: GroupMembershipIndexEntry[] = [];
+    const entities = this.client.listEntities({
+      queryOptions: {
+        filter: odata`PartitionKey eq ${userId} and RowKey ge ${GROUP_PREFIX} and RowKey lt ${"group;"}`,
+      },
+    });
+    for await (const entity of entities) {
+      memberships.push({
+        groupId: String(entity.rowKey).slice(GROUP_PREFIX.length),
+        role: entity.role as GroupRole,
+        joinedAt: String(entity.joinedAt),
+      });
+    }
+    return memberships;
   }
 }

@@ -1,7 +1,8 @@
-import type { UserProfile, UserRepo } from "../../src/ports/repositories";
+import type { GroupMembershipIndexEntry, UserProfile, UserRepo } from "../../src/ports/repositories";
 
 export class InMemoryUserRepo implements UserRepo {
   private readonly profiles = new Map<string, UserProfile>();
+  private readonly groupMemberships = new Map<string, Map<string, GroupMembershipIndexEntry>>();
 
   seed(userId: string, profile: UserProfile): void {
     this.profiles.set(userId, { ...profile });
@@ -26,5 +27,16 @@ export class InMemoryUserRepo implements UserRepo {
 
   async deleteProfile(userId: string): Promise<void> {
     this.profiles.delete(userId);
+  }
+
+  async addGroupMembership(userId: string, entry: GroupMembershipIndexEntry): Promise<void> {
+    const existing = this.groupMemberships.get(userId) ?? new Map();
+    existing.set(entry.groupId, { ...entry });
+    this.groupMemberships.set(userId, existing);
+  }
+
+  async listGroupMemberships(userId: string): Promise<GroupMembershipIndexEntry[]> {
+    const existing = this.groupMemberships.get(userId);
+    return existing ? [...existing.values()].map((e) => ({ ...e })) : [];
   }
 }
