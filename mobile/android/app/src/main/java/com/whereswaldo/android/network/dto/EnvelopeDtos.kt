@@ -36,6 +36,10 @@ data class FeaturesDto(
     val flags: PlanFlagsDto,
 )
 
+/** `maxActiveGroups`/`maxGroupMembers`/`maxGroupDurationDays`/`groupGraceDays` are the
+ * specs/005-temporary-groups.md additions to 001 §9 — defaulted to `null` so decoding still
+ * succeeds against any envelope fixture predating groups (`ignoreUnknownKeys` handles the
+ * reverse: an older client seeing these new fields for the first time). */
 @Serializable
 data class PlanLimitsDto(
     val maxDevices: Int,
@@ -43,6 +47,10 @@ data class PlanLimitsDto(
     val historyDays: Int,
     val minSyncIntervalMinutes: Int,
     val locateRequestsPerDay: Int,
+    val maxActiveGroups: Int? = null,
+    val maxGroupMembers: Int? = null,
+    val maxGroupDurationDays: Int? = null,
+    val groupGraceDays: Int? = null,
 )
 
 @Serializable
@@ -50,4 +58,5 @@ data class PlanFlagsDto(
     val pushToLocate: Boolean,
     val geofencing: Boolean,
     val historyReplay: Boolean,
+    val groups: Boolean = false,
 )

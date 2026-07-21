@@ -21,6 +21,8 @@ fun ApiError.userMessage(): String = when (this) {
 
     is ApiError.TrackingPaused -> "Location tracking is paused for this device."
 
+    is ApiError.ProfileNotFound -> "We couldn't find your profile. Please try again."
+
     is ApiError.FamilyNotFound -> "We couldn't find your family. Please try again."
 
     is ApiError.MemberNotFound -> "That family member couldn't be found."
@@ -29,22 +31,33 @@ fun ApiError.userMessage(): String = when (this) {
 
     is ApiError.LocateRequestNotFound -> "That locate request couldn't be found."
 
+    is ApiError.GroupNotFound -> "That group couldn't be found."
+
     is ApiError.FamilyAlreadyMember -> "You're already part of a family."
 
     is ApiError.GeofenceVersionConflict -> "Someone else changed the geofences — refreshing."
+
+    is ApiError.GroupAlreadyMember -> "You're already part of that group."
+
+    is ApiError.GroupFull -> "That group is full."
 
     is ApiError.InviteExpired -> "This invite code has expired."
 
     is ApiError.LocateRequestExpired -> "This locate request has expired."
 
+    is ApiError.GroupExpired -> "This group has ended."
+
     is ApiError.InviteInvalid -> "That invite code isn't valid."
 
     is ApiError.InviteAlreadyUsed -> "That invite code has already been used."
+
+    is ApiError.GroupCodeInvalid -> "That group code isn't valid."
 
     is ApiError.ValidationFailed -> when (reason) {
         "lastParent" -> "A family must always have at least one parent."
         "beyondRetention" -> "That date range is further back than your plan allows."
         "deviceIdInUse" -> "That device is already registered to another user."
+        "ownerCannotLeave" -> "As the group owner, you can't leave — end or delete the group instead."
         else -> "Please check your entries and try again."
     }
 
@@ -55,6 +68,8 @@ fun ApiError.userMessage(): String = when (this) {
         "maxGeofences" -> "You've reached your geofence limit for this plan."
         "locateRequestsPerDay" -> "You've reached today's locate-request limit."
         "minSyncIntervalMinutes" -> "That sync interval isn't available on your plan."
+        "maxActiveGroups" -> "You've reached your active-group limit for this plan."
+        "maxGroupDurationDays" -> "That end date is further out than your plan allows."
         else -> "You've reached your plan limit."
     }
 

@@ -5,20 +5,22 @@ import com.whereswaldo.android.network.dto.*
 import com.whereswaldo.android.network.ports.DevicesApi
 import com.whereswaldo.android.network.ports.FamilyApi
 import com.whereswaldo.android.network.ports.GeofenceApi
+import com.whereswaldo.android.network.ports.GroupsApi
 import com.whereswaldo.android.network.ports.LocateApi
 import com.whereswaldo.android.network.ports.LocationsApi
 import java.io.IOException
+import okhttp3.ResponseBody
 import retrofit2.Response
 
 /**
- * Implements all five API port interfaces on top of [WaldoApiService]
+ * Implements all six API port interfaces on top of [WaldoApiService]
  * (specs/003-android-client.md §5's endpoint table). The only thing the rest of the app depends
  * on for networking — mirrors the backend's ports/adapters split (`backend/README.md`).
  */
 class WaldoApiClient(
     private val service: WaldoApiService,
     private val authProvider: AuthProvider,
-) : FamilyApi, DevicesApi, LocationsApi, LocateApi, GeofenceApi {
+) : FamilyApi, DevicesApi, LocationsApi, LocateApi, GeofenceApi, GroupsApi {
 
     // ------------------------------------------------------------------
     // Shared envelope/error handling (specs/003 §6)
@@ -64,6 +66,27 @@ class WaldoApiClient(
     private suspend fun <T> unwrap(call: suspend () -> Response<Envelope<T>>): ApiResult<T> =
         withAuthRetry { unwrapOnce(call) }
 
+    /**
+     * Shared bare-204 handling (specs/003 §6.3) — every endpoint whose success body is
+     * intentionally empty funnels through here: `removeMember` (§3.6), and (as of specs/005)
+     * `deleteGroup`/`leaveGroup`/`removeGroupMember` (§12.5/§12.8/§12.9). Extracted once three
+     * more of these appeared alongside `removeMember`, following the same anti-duplication
+     * lesson as [withAuthRetry]'s own extraction (A1 review finding).
+     */
+    private suspend fun unwrapBare204(call: suspend () -> Response<ResponseBody>): ApiResult<Unit> =
+        withAuthRetry {
+            try {
+                val response = call()
+                if (response.isSuccessful) {
+                    ApiResult.Success(Unit, features = null)
+                } else {
+                    ApiResult.Failure(parseError(response.errorBody()?.string()))
+                }
+            } catch (e: IOException) {
+                ApiResult.Failure(ApiError.NetworkFailure(e))
+            }
+        }
+
     private fun parseError(errorBodyText: String?): ApiError {
         if (errorBodyText.isNullOrEmpty()) {
             return ApiError.InternalError("empty error body", null)
@@ -100,18 +123,8 @@ class WaldoApiClient(
     override suspend fun updateMember(userId: String, request: UpdateMemberRequestDto): ApiResult<MemberDto> =
         unwrap { service.updateMember(userId, request.requireAtLeastOneField()) }
 
-    override suspend fun removeMember(userId: String): ApiResult<Unit> = withAuthRetry {
-        try {
-            val response = service.removeMember(userId)
-            if (response.isSuccessful) {
-                ApiResult.Success(Unit, features = null)
-            } else {
-                ApiResult.Failure(parseError(response.errorBody()?.string()))
-            }
-        } catch (e: IOException) {
-            ApiResult.Failure(ApiError.NetworkFailure(e))
-        }
-    }
+    override suspend fun removeMember(userId: String): ApiResult<Unit> =
+        unwrapBare204 { service.removeMember(userId) }
 
     // ------------------------------------------------------------------
     // DevicesApi (001 §4)
@@ -237,4 +250,43 @@ class WaldoApiClient(
         cursor: String?,
     ): ApiResult<GeofenceEventHistoryResponseDto> =
         unwrap { service.getGeofenceEventHistory(from, to, userId, limit, cursor) }
+
+    // ------------------------------------------------------------------
+    // GroupsApi (001 §12; specs/005-temporary-groups.md)
+    // ------------------------------------------------------------------
+
+    override suspend fun createGroup(
+        name: String,
+        endsAt: String,
+        expiryPolicy: String,
+        displayName: String?,
+    ): ApiResult<GroupDto> =
+        unwrap { service.createGroup(CreateGroupRequestDto(name, endsAt, expiryPolicy, displayName)) }
+
+    override suspend fun listGroups(): ApiResult<ListGroupsResponseDto> =
+        unwrap { service.listGroups() }
+
+    override suspend fun getGroup(groupId: String): ApiResult<GroupDetailDto> =
+        unwrap { service.getGroup(groupId) }
+
+    override suspend fun updateGroup(groupId: String, request: UpdateGroupRequestDto): ApiResult<GroupDto> =
+        unwrap { service.updateGroup(groupId, request.requireAtLeastOneField()) }
+
+    override suspend fun deleteGroup(groupId: String): ApiResult<Unit> =
+        unwrapBare204 { service.deleteGroup(groupId) }
+
+    override suspend fun joinGroup(code: String, displayName: String?): ApiResult<GroupDto> =
+        unwrap { service.joinGroup(JoinGroupRequestDto(code, displayName)) }
+
+    override suspend fun rotateGroupCode(groupId: String): ApiResult<RotateGroupCodeResponseDto> =
+        unwrap { service.rotateGroupCode(groupId) }
+
+    override suspend fun leaveGroup(groupId: String): ApiResult<Unit> =
+        unwrapBare204 { service.leaveGroup(groupId) }
+
+    override suspend fun removeGroupMember(groupId: String, userId: String): ApiResult<Unit> =
+        unwrapBare204 { service.removeGroupMember(groupId, userId) }
+
+    override suspend fun getGroupLatestLocations(groupId: String): ApiResult<GroupLatestLocationsResponseDto> =
+        unwrap { service.getGroupLatestLocations(groupId) }
 }

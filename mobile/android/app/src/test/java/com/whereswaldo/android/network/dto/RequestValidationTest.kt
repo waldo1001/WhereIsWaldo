@@ -34,4 +34,14 @@ class RequestValidationTest {
         CreateLocateRequestRequestDto(targetUserId = "u2", targetDeviceId = null).requireExactlyOneTarget()
         CreateLocateRequestRequestDto(targetUserId = null, targetDeviceId = "d1").requireExactlyOneTarget()
     }
+
+    @Test
+    fun `UpdateGroupRequestDto requires at least one field`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            UpdateGroupRequestDto(name = null, endsAt = null).requireAtLeastOneField()
+        }
+        // Does not throw when at least one field is set.
+        UpdateGroupRequestDto(name = "Festival crew 2026", endsAt = null).requireAtLeastOneField()
+        UpdateGroupRequestDto(name = null, endsAt = "2026-08-03T22:00:00Z").requireAtLeastOneField()
+    }
 }

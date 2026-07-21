@@ -33,6 +33,18 @@ class ApiErrorUserMessageTest {
     }
 
     @Test
+    fun `LIMIT_EXCEEDED maps the two group-era limit keys to friendly messages`() {
+        assertEquals(
+            "You've reached your active-group limit for this plan.",
+            ApiError.LimitExceeded("maxActiveGroups", rawServerMessage, "r_1").userMessage(),
+        )
+        assertEquals(
+            "That end date is further out than your plan allows.",
+            ApiError.LimitExceeded("maxGroupDurationDays", rawServerMessage, "r_1").userMessage(),
+        )
+    }
+
+    @Test
     fun `GEOFENCE_VERSION_CONFLICT maps to a friendly refreshing message`() {
         val error = ApiError.GeofenceVersionConflict(currentEtag = "\"3\"", message = rawServerMessage, requestId = "r_2")
 
@@ -61,8 +73,40 @@ class ApiErrorUserMessageTest {
             ApiError.ValidationFailed(null, "deviceIdInUse", rawServerMessage, "r_6").userMessage(),
         )
         assertEquals(
+            "As the group owner, you can't leave — end or delete the group instead.",
+            ApiError.ValidationFailed(null, "ownerCannotLeave", rawServerMessage, "r_6b").userMessage(),
+        )
+        assertEquals(
             "Please check your entries and try again.",
             ApiError.ValidationFailed(listOf("fixes[0].recordedAt"), null, rawServerMessage, "r_7").userMessage(),
+        )
+    }
+
+    @Test
+    fun `the six group-era codes each get their own friendly message, not the raw server message`() {
+        assertEquals(
+            "We couldn't find your profile. Please try again.",
+            ApiError.ProfileNotFound(rawServerMessage, "r_g1").userMessage(),
+        )
+        assertEquals(
+            "That group couldn't be found.",
+            ApiError.GroupNotFound(rawServerMessage, "r_g2").userMessage(),
+        )
+        assertEquals(
+            "You're already part of that group.",
+            ApiError.GroupAlreadyMember(rawServerMessage, "r_g3").userMessage(),
+        )
+        assertEquals(
+            "That group is full.",
+            ApiError.GroupFull(max = 50, message = rawServerMessage, requestId = "r_g4").userMessage(),
+        )
+        assertEquals(
+            "This group has ended.",
+            ApiError.GroupExpired(rawServerMessage, "r_g5").userMessage(),
+        )
+        assertEquals(
+            "That group code isn't valid.",
+            ApiError.GroupCodeInvalid(rawServerMessage, "r_g6").userMessage(),
         )
     }
 
@@ -92,16 +136,22 @@ class ApiErrorUserMessageTest {
             ApiError.AuthTokenExpired(rawServerMessage, requestId),
             ApiError.AuthForbidden(rawServerMessage, requestId),
             ApiError.TrackingPaused(null, rawServerMessage, requestId),
+            ApiError.ProfileNotFound(rawServerMessage, requestId),
             ApiError.FamilyNotFound(rawServerMessage, requestId),
             ApiError.MemberNotFound(rawServerMessage, requestId),
             ApiError.DeviceNotFound(rawServerMessage, requestId),
             ApiError.LocateRequestNotFound(rawServerMessage, requestId),
+            ApiError.GroupNotFound(rawServerMessage, requestId),
             ApiError.FamilyAlreadyMember(rawServerMessage, requestId),
             ApiError.GeofenceVersionConflict(null, rawServerMessage, requestId),
+            ApiError.GroupAlreadyMember(rawServerMessage, requestId),
+            ApiError.GroupFull(null, rawServerMessage, requestId),
             ApiError.InviteExpired(rawServerMessage, requestId),
             ApiError.LocateRequestExpired(rawServerMessage, requestId),
+            ApiError.GroupExpired(rawServerMessage, requestId),
             ApiError.InviteInvalid(rawServerMessage, requestId),
             ApiError.InviteAlreadyUsed(rawServerMessage, requestId),
+            ApiError.GroupCodeInvalid(rawServerMessage, requestId),
             ApiError.ValidationFailed(null, null, rawServerMessage, requestId),
             ApiError.LocationBatchTooLarge(null, rawServerMessage, requestId),
             ApiError.LimitExceeded(null, rawServerMessage, requestId),

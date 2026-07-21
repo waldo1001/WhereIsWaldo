@@ -20,12 +20,17 @@ data class PlanLimits(
     val historyDays: Int,
     val minSyncIntervalMinutes: Int,
     val locateRequestsPerDay: Int,
+    val maxActiveGroups: Int? = null,
+    val maxGroupMembers: Int? = null,
+    val maxGroupDurationDays: Int? = null,
+    val groupGraceDays: Int? = null,
 )
 
 data class PlanFlags(
     val pushToLocate: Boolean,
     val geofencing: Boolean,
     val historyReplay: Boolean,
+    val groups: Boolean = false,
 )
 
 fun FeaturesDto.toDomain(): Features = Features(
@@ -36,10 +41,15 @@ fun FeaturesDto.toDomain(): Features = Features(
         historyDays = limits.historyDays,
         minSyncIntervalMinutes = limits.minSyncIntervalMinutes,
         locateRequestsPerDay = limits.locateRequestsPerDay,
+        maxActiveGroups = limits.maxActiveGroups,
+        maxGroupMembers = limits.maxGroupMembers,
+        maxGroupDurationDays = limits.maxGroupDurationDays,
+        groupGraceDays = limits.groupGraceDays,
     ),
     flags = PlanFlags(
         pushToLocate = flags.pushToLocate,
         geofencing = flags.geofencing,
         historyReplay = flags.historyReplay,
+        groups = flags.groups,
     ),
 )
