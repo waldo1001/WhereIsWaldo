@@ -128,4 +128,76 @@ final class FakeAPIClient: WaldoAPIClient {
 
     func reportGeofenceEvents(deviceId: String, events: [GeofenceEventReport]) async throws -> Envelope<ReportGeofenceEventsResponse> { fatalError("not configured") }
     func getGeofenceEventHistory(from: String, to: String, userId: String?, limit: Int?, cursor: String?) async throws -> Envelope<GeofenceEventHistoryResponse> { fatalError("not configured") }
+
+    // MARK: - §12 Groups
+
+    private(set) var createGroupCalls: [(name: String, endsAt: String, expiryPolicy: String, displayName: String?)] = []
+    var createGroupHandler: (String, String, String, String?) async throws -> Envelope<GroupSummary> = { _, _, _, _ in fatalError("not configured") }
+    func createGroup(name: String, endsAt: String, expiryPolicy: String, displayName: String?) async throws -> Envelope<GroupSummary> {
+        createGroupCalls.append((name, endsAt, expiryPolicy, displayName))
+        return try await createGroupHandler(name, endsAt, expiryPolicy, displayName)
+    }
+
+    private(set) var listGroupsCallCount = 0
+    var listGroupsHandler: () async throws -> Envelope<ListGroupsResponse> = { fatalError("not configured") }
+    func listGroups() async throws -> Envelope<ListGroupsResponse> {
+        listGroupsCallCount += 1
+        return try await listGroupsHandler()
+    }
+
+    private(set) var getGroupCalls: [String] = []
+    var getGroupHandler: (String) async throws -> Envelope<GroupDetail> = { _ in fatalError("not configured") }
+    func getGroup(groupId: String) async throws -> Envelope<GroupDetail> {
+        getGroupCalls.append(groupId)
+        return try await getGroupHandler(groupId)
+    }
+
+    private(set) var updateGroupCalls: [(groupId: String, name: String?, endsAt: String?)] = []
+    var updateGroupHandler: (String, String?, String?) async throws -> Envelope<GroupSummary> = { _, _, _ in fatalError("not configured") }
+    func updateGroup(groupId: String, name: String?, endsAt: String?) async throws -> Envelope<GroupSummary> {
+        updateGroupCalls.append((groupId, name, endsAt))
+        return try await updateGroupHandler(groupId, name, endsAt)
+    }
+
+    private(set) var deleteGroupCalls: [String] = []
+    var deleteGroupHandler: (String) async throws -> Void = { _ in fatalError("not configured") }
+    func deleteGroup(groupId: String) async throws {
+        deleteGroupCalls.append(groupId)
+        try await deleteGroupHandler(groupId)
+    }
+
+    private(set) var joinGroupCalls: [(code: String, displayName: String?)] = []
+    var joinGroupHandler: (String, String?) async throws -> Envelope<GroupSummary> = { _, _ in fatalError("not configured") }
+    func joinGroup(code: String, displayName: String?) async throws -> Envelope<GroupSummary> {
+        joinGroupCalls.append((code, displayName))
+        return try await joinGroupHandler(code, displayName)
+    }
+
+    private(set) var rotateGroupCodeCalls: [String] = []
+    var rotateGroupCodeHandler: (String) async throws -> Envelope<RotateGroupCodeResponse> = { _ in fatalError("not configured") }
+    func rotateGroupCode(groupId: String) async throws -> Envelope<RotateGroupCodeResponse> {
+        rotateGroupCodeCalls.append(groupId)
+        return try await rotateGroupCodeHandler(groupId)
+    }
+
+    private(set) var leaveGroupCalls: [String] = []
+    var leaveGroupHandler: (String) async throws -> Void = { _ in fatalError("not configured") }
+    func leaveGroup(groupId: String) async throws {
+        leaveGroupCalls.append(groupId)
+        try await leaveGroupHandler(groupId)
+    }
+
+    private(set) var removeGroupMemberCalls: [(groupId: String, userId: String)] = []
+    var removeGroupMemberHandler: (String, String) async throws -> Void = { _, _ in fatalError("not configured") }
+    func removeGroupMember(groupId: String, userId: String) async throws {
+        removeGroupMemberCalls.append((groupId, userId))
+        try await removeGroupMemberHandler(groupId, userId)
+    }
+
+    private(set) var getGroupLatestLocationsCalls: [String] = []
+    var getGroupLatestLocationsHandler: (String) async throws -> Envelope<GroupLatestLocationsResponse> = { _ in fatalError("not configured") }
+    func getGroupLatestLocations(groupId: String) async throws -> Envelope<GroupLatestLocationsResponse> {
+        getGroupLatestLocationsCalls.append(groupId)
+        return try await getGroupLatestLocationsHandler(groupId)
+    }
 }

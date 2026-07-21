@@ -338,4 +338,173 @@ struct RequestBuildingTests {
         let envelope = try await client.getGeofenceEventHistory(from: "2026-07-01", to: "2026-07-19", userId: nil, limit: nil, cursor: nil)
         #expect(envelope.data.events.isEmpty)
     }
+
+    // MARK: §12 Groups (specs/005-temporary-groups.md; wire shapes 001 §12)
+
+    @Test func createGroup_buildsRequest() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/api/v1/groups")
+            let body = try self.bodyJSON(request)
+            #expect(body["name"] as? String == "Festival crew")
+            #expect(body["endsAt"] as? String == "2026-08-02T22:00:00Z")
+            #expect(body["expiryPolicy"] as? String == "delete")
+            #expect(body["displayName"] as? String == "Eric")
+            return (jsonResponse(url: request.url!, status: 201), envelopeJSON(data: """
+            { "groupId": "grp_9J2Kq7Lm3NpR5sTvWxYz", "name": "Festival crew",
+              "endsAt": "2026-08-02T22:00:00Z", "expiryPolicy": "delete", "state": "active",
+              "role": "owner", "memberCount": 1, "code": "7F3K9QRZ",
+              "createdAt": "2026-07-21T10:00:00Z" }
+            """))
+        }
+        let envelope = try await client.createGroup(name: "Festival crew", endsAt: "2026-08-02T22:00:00Z", expiryPolicy: "delete", displayName: "Eric")
+        #expect(envelope.data.groupId == "grp_9J2Kq7Lm3NpR5sTvWxYz")
+        #expect(envelope.data.code == "7F3K9QRZ")
+        #expect(envelope.data.createdAt == "2026-07-21T10:00:00Z")
+    }
+
+    @Test func listGroups_buildsRequest() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "GET")
+            #expect(request.url?.path == "/api/v1/groups")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "groups": [ { "groupId": "grp_x", "name": "Festival crew", "endsAt": "2026-08-02T22:00:00Z",
+              "expiryPolicy": "delete", "state": "active", "role": "owner", "memberCount": 7, "code": "7F3K9QRZ" } ] }
+            """))
+        }
+        let envelope = try await client.listGroups()
+        #expect(envelope.data.groups.count == 1)
+        #expect(envelope.data.groups[0].createdAt == nil, "list items omit createdAt")
+    }
+
+    @Test func getGroup_buildsRequest_withRoster() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "GET")
+            #expect(request.url?.path == "/api/v1/groups/grp_x")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "groupId": "grp_x", "name": "Festival crew", "endsAt": "2026-08-02T22:00:00Z",
+              "expiryPolicy": "delete", "state": "active", "role": "member", "memberCount": 2,
+              "code": "7F3K9QRZ", "createdAt": "2026-07-21T10:00:00Z",
+              "members": [ { "userId": "u1", "displayName": "Eric", "role": "owner", "joinedAt": "2026-07-21T10:00:00Z" },
+                            { "userId": "u9", "displayName": "Noor", "role": "member", "joinedAt": "2026-07-21T10:05:00Z" } ] }
+            """))
+        }
+        let envelope = try await client.getGroup(groupId: "grp_x")
+        #expect(envelope.data.members?.count == 2)
+    }
+
+    @Test func getGroup_buildsRequest_hiddenRosterDuringGrace() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "groupId": "grp_x", "name": "Festival crew", "endsAt": "2026-08-02T22:00:00Z",
+              "expiryPolicy": "grace", "state": "ended", "role": "member", "memberCount": 2,
+              "code": null, "createdAt": "2026-07-21T10:00:00Z", "members": null }
+            """))
+        }
+        let envelope = try await client.getGroup(groupId: "grp_x")
+        #expect(envelope.data.members == nil, "roster hidden for a non-owner during grace, 005 §2.3")
+        #expect(envelope.data.code == nil)
+    }
+
+    @Test func updateGroup_buildsRequest() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "PATCH")
+            #expect(request.url?.path == "/api/v1/groups/grp_x")
+            let body = try self.bodyJSON(request)
+            #expect(body["endsAt"] as? String == "2026-08-03T22:00:00Z")
+            #expect(body["name"] == nil, "omitted optional fields must not be sent as null")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "groupId": "grp_x", "name": "Festival crew", "endsAt": "2026-08-03T22:00:00Z",
+              "expiryPolicy": "delete", "state": "active", "role": "owner", "memberCount": 1, "code": "7F3K9QRZ" }
+            """))
+        }
+        let envelope = try await client.updateGroup(groupId: "grp_x", name: nil, endsAt: "2026-08-03T22:00:00Z")
+        #expect(envelope.data.endsAt == "2026-08-03T22:00:00Z")
+    }
+
+    @Test func deleteGroup_buildsRequestAndHandlesNoContent() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.url?.path == "/api/v1/groups/grp_x")
+            return (jsonResponse(url: request.url!, status: 204), Data())
+        }
+        try await client.deleteGroup(groupId: "grp_x")
+    }
+
+    @Test func joinGroup_buildsRequest() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/api/v1/groups/join")
+            let body = try self.bodyJSON(request)
+            #expect(body["code"] as? String == "7f3k-9qrz")
+            #expect(body["displayName"] as? String == "Noor")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "groupId": "grp_x", "name": "Festival crew", "endsAt": "2026-08-02T22:00:00Z",
+              "expiryPolicy": "delete", "state": "active", "role": "member", "memberCount": 8, "code": "7F3K9QRZ" }
+            """))
+        }
+        let envelope = try await client.joinGroup(code: "7f3k-9qrz", displayName: "Noor")
+        #expect(envelope.data.role == "member")
+        #expect(envelope.data.memberCount == 8)
+    }
+
+    @Test func rotateGroupCode_buildsRequest() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/api/v1/groups/grp_x/code/rotate")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "code": "9XPT4WKA", "rotatedAt": "2026-07-21T10:05:00Z" }
+            """))
+        }
+        let envelope = try await client.rotateGroupCode(groupId: "grp_x")
+        #expect(envelope.data.code == "9XPT4WKA")
+    }
+
+    @Test func leaveGroup_buildsRequestAndHandlesNoContent() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "POST")
+            #expect(request.url?.path == "/api/v1/groups/grp_x/leave")
+            return (jsonResponse(url: request.url!, status: 204), Data())
+        }
+        try await client.leaveGroup(groupId: "grp_x")
+    }
+
+    @Test func removeGroupMember_buildsRequestAndHandlesNoContent() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.url?.path == "/api/v1/groups/grp_x/members/u9")
+            return (jsonResponse(url: request.url!, status: 204), Data())
+        }
+        try await client.removeGroupMember(groupId: "grp_x", userId: "u9")
+    }
+
+    @Test func getGroupLatestLocations_buildsRequest_positionOnly() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            #expect(request.httpMethod == "GET")
+            #expect(request.url?.path == "/api/v1/groups/grp_x/locations/latest")
+            return (jsonResponse(url: request.url!, status: 200), envelopeJSON(data: """
+            { "members": [
+                { "userId": "u1", "displayName": "Eric", "role": "owner",
+                  "location": { "lat": 51.0543, "lon": 3.7174, "accuracyM": 15.0,
+                                "recordedAt": "2026-07-21T09:58:00Z", "receivedAt": "2026-07-21T09:58:02Z",
+                                "isStale": false } },
+                { "userId": "u9", "displayName": "Noor", "role": "member", "location": null } ] }
+            """))
+        }
+        let envelope = try await client.getGroupLatestLocations(groupId: "grp_x")
+        #expect(envelope.data.members.count == 2)
+        #expect(envelope.data.members[0].location?.lat == 51.0543)
+        #expect(envelope.data.members[1].location == nil)
+    }
 }
