@@ -18,8 +18,11 @@ export class TableUserRepo implements UserRepo {
     try {
       const entity = await this.client.getEntity(userId, PROFILE_ROW_KEY);
       return {
-        familyId: String(entity.familyId),
-        role: entity.role as Role,
+        // familyId/role are nullable (family-less users, 001 §1.5 / 002 §2.2) — Table
+        // Storage round-trips an explicit `null` property value, so String(null) would
+        // wrongly stringify to "null" without this guard.
+        familyId: entity.familyId != null ? String(entity.familyId) : null,
+        role: entity.role != null ? (entity.role as Role) : null,
         displayName: String(entity.displayName),
       };
     } catch (err) {

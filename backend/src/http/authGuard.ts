@@ -16,7 +16,11 @@ export interface AuthGuardDeps {
 }
 
 export interface AuthGuardOptions {
-  /** True only for POST /families and POST /invites/accept (§1.5 step 3 / §1.5.3). */
+  /**
+   * True only for the four §1.5.3 profile-bootstrapping endpoints: POST /families,
+   * POST /invites/accept, POST /groups, POST /groups/join (§1.5 step 3). Every other
+   * endpoint without a profile gets PROFILE_NOT_FOUND.
+   */
   allowNoProfile?: boolean;
 }
 
@@ -58,7 +62,7 @@ export async function authenticate(
     if (options.allowNoProfile) {
       return { uid, familyId: null, role: null };
     }
-    throw new AppError("FAMILY_NOT_FOUND", "caller has no family");
+    throw new AppError("PROFILE_NOT_FOUND", "caller has no profile");
   }
   return { uid, familyId: profile.familyId, role: profile.role };
 }

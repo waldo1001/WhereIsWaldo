@@ -51,13 +51,14 @@ describe("http/envelope", () => {
   });
 
   describe("error code catalog (001 §10)", () => {
-    it("contains exactly the 21 codes from the catalog — no invented codes", () => {
+    it("contains exactly the 22 codes from the catalog — no invented codes", () => {
       const catalogCodes = [
         "AUTH_MISSING_TOKEN",
         "AUTH_INVALID_TOKEN",
         "AUTH_TOKEN_EXPIRED",
         "AUTH_FORBIDDEN",
         "TRACKING_PAUSED",
+        "PROFILE_NOT_FOUND",
         "FAMILY_NOT_FOUND",
         "MEMBER_NOT_FOUND",
         "DEVICE_NOT_FOUND",
@@ -85,6 +86,7 @@ describe("http/envelope", () => {
       expect(ERROR_STATUS.AUTH_TOKEN_EXPIRED).toBe(401);
       expect(ERROR_STATUS.AUTH_FORBIDDEN).toBe(403);
       expect(ERROR_STATUS.TRACKING_PAUSED).toBe(403);
+      expect(ERROR_STATUS.PROFILE_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.FAMILY_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.MEMBER_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.DEVICE_NOT_FOUND).toBe(404);
