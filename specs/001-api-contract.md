@@ -100,7 +100,9 @@ Role violation → `403 AUTH_FORBIDDEN`.
 
 ### 2.1 Client side
 
-Mobile apps authenticate users with **Firebase Auth** (email/password and/or Google sign-in — Firebase project setup in `docs/azure-setup.md`) and send the current Firebase **ID token** as `Authorization: Bearer <token>` on every call. Clients MUST refresh tokens via the Firebase SDK (tokens live ~1 h) and retry once on `AUTH_TOKEN_EXPIRED`.
+Mobile apps authenticate users with **Firebase Phone Authentication** (SMS one-time code — the phone number *is* the account; no email/password, Google, or other providers exist; sign-in flow and Firebase-project requirements in [`006-phone-auth.md`](006-phone-auth.md), setup steps in `docs/azure-setup.md`) and send the current Firebase **ID token** as `Authorization: Bearer <token>` on every call. Clients MUST refresh tokens via the Firebase SDK (tokens live ~1 h) and retry once on `AUTH_TOKEN_EXPIRED`.
+
+The sign-in provider is invisible to this contract: server verification (§2.2) uses only `iss`/`aud`/signature/`exp`/`iat`/`sub`. The token's `phone_number` claim is **not read, returned, or stored** server-side in v1 — `userId` stays the opaque `uid` (006 §2).
 
 ### 2.2 Server-side verification (credential-free)
 
@@ -109,6 +111,7 @@ The backend verifies tokens statelessly with `jose`:
 - JWKS: `createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"))` — jose caches per `Cache-Control`.
 - Required claims: alg `RS256`; `iss === "https://securetoken.google.com/" + FIREBASE_PROJECT_ID`; `aud === FIREBASE_PROJECT_ID`; `exp` in the future; `iat` in the past; `sub` (= `uid`) non-empty.
 - `FIREBASE_PROJECT_ID` is an app setting. **No Google credential is used for auth.**
+- These claims are identical across Firebase sign-in providers; the sign-in method is invisible to this verification.
 
 ### 2.3 Local development
 

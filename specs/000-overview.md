@@ -26,7 +26,7 @@ A private, family-only location tracking app ("Find My Family" style) for **Andr
 | Backend | Azure Functions, **consumption plan**, HTTP-triggered, **TypeScript / Node 20, v4 programming model** |
 | Storage | Azure **Blob Storage** (JSONL history per family/member/date, append blobs) + Azure **Table Storage** (point lookups: last-known, roster, devices, entitlements). **No database server.** |
 | Push | **FCM HTTP v1 as the single push API** for both platforms (FCM routes to APNs for iOS). Sole planned exception: iOS Location Pushes go direct to APNs once the O1 entitlement lands — FCM cannot address location push tokens (001 §8.1). |
-| User auth | **Firebase Auth**; backend verifies Firebase ID tokens statelessly via Google JWKS (001 §2) |
+| User auth | **Firebase Auth — phone-number-only sign-in** (SMS OTP, 006); backend verifies Firebase ID tokens statelessly via Google JWKS (001 §2) |
 | Azure auth | Managed identity everywhere; no credentials in code. (Exception, flagged: FCM sending needs a Google service-account key in Function App settings — Google-side constraint; WIF hardening is an open item.) |
 | Web viz | Optional, later: Leaflet on Azure Static Web Apps free tier |
 | Distribution | Google Play + Apple App Store (full publishing, not TestFlight-only) |
@@ -45,6 +45,7 @@ A private, family-only location tracking app ("Find My Family" style) for **Andr
 | D7 | Location report idempotency at **batch** level | Retries resend whole batches; per-fix markers would cost N table writes for no added safety |
 | D8 | `LIMIT_EXCEEDED` is HTTP **402** | Single upsell hook for the future subscription tier |
 | D9 | Firebase token verification without Admin SDK (jose + JWKS) | No Google credential needed for auth; revocation gap accepted — see 001 §2.4 |
+| D10 | Phone-number-only sign-in via Firebase Phone Auth, replacing email/password (006) | The phone is the natural identity (WhatsApp model); no passwords for kids to manage; server contract untouched (provider-invisible tokens); Blaze + per-SMS billing accepted at cents/month, guarded by region allowlist + budget alert; pre-launch, so a one-time account reset instead of migration |
 
 ## Subscription-ready (NOT implemented)
 
@@ -74,6 +75,8 @@ See [`specs/README.md`](README.md). Summary: spec-driven (no code before spec), 
 | O8 | **Notification localization** | v1 pushes carry server-composed English text plus structured data; clients MAY re-render locally. Proper i18n later. |
 | O9 | **Geofences above 20** | iOS caps monitored regions at 20/app — hence `maxGeofences: 20`. A paid tier above 20 would need client-side nearest-region rotation. |
 | O10 | **Trademark** | "Where's Waldo/Wally" is the book franchise's mark. Fine private; revisit before public store branding. |
+| O11 | **Phone-number surfacing** | The ID token's `phone_number` claim is deliberately unused in v1 (006 §2). Showing numbers on rosters later is additive (`VerifiedToken` gains an optional field) but is a children's-PII decision — bundle with O7. |
+| O12 | **Number change / account linking** | v1: a changed phone number = a new account, re-invite to family/groups (006 §1). If that ever hurts, an account-linking flow (verify old + new number, remap or re-key) needs its own numbered spec. |
 
 ## Test checklist
 

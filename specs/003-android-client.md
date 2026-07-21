@@ -178,7 +178,9 @@ Per 001 §2.1 ("Clients MUST refresh tokens via the Firebase SDK and retry once 
 
 **A2 refactor:** this logic is a single private `withAuthRetry(attempt: suspend () -> ApiResult<T>): ApiResult<T>` helper in `WaldoApiClient` — calls `attempt()` once, and on an `AuthTokenExpired` failure, force-refreshes the token and calls `attempt()` exactly one more time. Every method funnels through it, including the three body-shape exceptions of §6.3 (`removeMember`'s bare 204, `getGeofences`'s bare 304, `replaceGeofences`'s ETag-header success) — these previously hand-duplicated the retry branch inline (an A1 review finding); now there is exactly one implementation, covered by `WaldoApiClientAuthRetryTest`'s tests for all four shapes (the generic envelope path plus the three exceptions).
 
-## 7. Auth (`AuthProvider`)
+## 7. Auth (`AuthProvider`) — phone-number sign-in (specs/006)
+
+Sign-in is **phone-number-only** (SMS OTP): flow, state machine, E.164 normalization, and the error/message catalog are normative in [`specs/006-phone-auth.md`](006-phone-auth.md) §3–§5; this section owns the Android shapes. The former email/password path (`signIn(email, password)`, `AuthSignInException`, the email/password form) is **deleted** — no email/password code survives.
 
 ```kotlin
 sealed interface AuthState {
@@ -187,27 +189,44 @@ sealed interface AuthState {
     data class SignedIn(val uid: String) : AuthState
 }
 
+// Pure — the closed error set of 006 §4.2; messages in PhoneAuthUserMessage.kt
+enum class PhoneAuthError {
+    INVALID_PHONE_NUMBER, TOO_MANY_REQUESTS, SMS_QUOTA_EXCEEDED,
+    APP_VERIFICATION_FAILED, INVALID_CODE, CODE_EXPIRED, NETWORK, UNKNOWN,
+}
+class PhoneAuthException(val error: PhoneAuthError) : Exception(error.name)
+
+sealed interface PhoneVerificationEvent {
+    data object CodeSent : PhoneVerificationEvent
+    data object Completed : PhoneVerificationEvent            // instant verification / auto-retrieval: already signed in
+    data class Failed(val error: PhoneAuthError) : PhoneVerificationEvent
+}
+
 interface AuthProvider {
     val authState: StateFlow<AuthState>
     suspend fun currentIdToken(forceRefresh: Boolean = false): String?
     suspend fun signOut()
-    suspend fun signIn(email: String, password: String)
+    /** Starts SMS verification for [phoneNumberE164] (already normalized per 006 §3). Calling again
+     *  with the same number while a verification is in flight = resend — the provider reuses its
+     *  internal resend token; Firebase types never cross this interface. */
+    fun startPhoneVerification(phoneNumberE164: String): Flow<PhoneVerificationEvent>
+    /** Confirms the SMS code for the provider-tracked in-flight verification.
+     *  On success `authState` flips to `SignedIn`. Throws [PhoneAuthException]. */
+    suspend fun confirmCode(code: String)
 }
-
-/** Already user-facing (never the raw Firebase SDK/server text — same principle as
- * `ApiErrorUserMessage`). */
-class AuthSignInException(message: String) : Exception(message)
 ```
+
+The verification session (`verificationId`, `ForceResendingToken`) is **provider-internal state** — one sign-in at a time is the only real scenario, and keeping Firebase types out of the interface keeps every StateHolder pure JVM. `PhoneNumberNormalizer.kt` (pure, `auth/`) implements 006 §3; `PhoneAuthUserMessage.kt` (pure, mirrors `ApiErrorUserMessage.kt`) maps each `PhoneAuthError` to its fixed 006 §4.2 message — raw SDK text never reaches a screen.
 
 `AuthInterceptor` (OkHttp) attaches `Authorization: Bearer <token>` from `authProvider.currentIdToken()` on every request (001 §1.2 — required on every endpoint, no anonymous routes).
 
-**`DevAuthProvider`** (dev/stub, used when `BuildConfig.AUTH_MODE == "insecure-local"`): keeps an in-memory signed-in dev user and constructs an **unsigned** JWT-shaped bearer token at runtime — `base64url({"alg":"none"}) + "." + base64url({"iss":.., "aud":.., "sub":<uid>, "iat":.., "exp":..}) + "."` — matching 001 §2.3's "Firebase Auth emulator / hand-crafted JWTs" local-dev shape, so it can be pointed at a real backend running `AUTH_MODE=insecure-local` for manual integration testing. No literal token string is ever embedded in source, tests, or this spec — only the construction code — so nothing here can be mistaken for a real credential by the security-review secret scan. `signIn(email, password)` is a dev shortcut: any non-blank pair signs in with `uid = email` — there is no real credential exchange, matching this provider's existing "dev-only" nature.
+**`DevAuthProvider`** (dev/stub, used when `BuildConfig.AUTH_MODE == "insecure-local"`): keeps an in-memory signed-in dev user and constructs an **unsigned** JWT-shaped bearer token at runtime — `base64url({"alg":"none"}) + "." + base64url({"iss":.., "aud":.., "sub":<uid>, "iat":.., "exp":..}) + "."` — matching 001 §2.3's "Firebase Auth emulator / hand-crafted JWTs" local-dev shape, so it can be pointed at a real backend running `AUTH_MODE=insecure-local` for manual integration testing. No literal token string is ever embedded in source, tests, or this spec — only the construction code — so nothing here can be mistaken for a real credential by the security-review secret scan. It implements the two-step phone shape per 006 §5: `startPhoneVerification` validates the normalized number and immediately emits `CodeSent`; `confirmCode` accepts any non-blank code and signs in with `uid = <normalized E.164 number>` (no SMS, no Firebase). `signInDev(uid)` stays for tests.
 
-**`FirebaseAuthProvider`** (H1, real implementation for `AUTH_MODE == "firebase"`, replacing the earlier `FirebaseAuthProviderStub` placeholder): constructor-**injects** a `FirebaseAuth` instance rather than calling `FirebaseAuth.getInstance()` itself — `FirebaseAuth.getInstance()` needs an initialized `FirebaseApp`/Android `Context`, which doesn't exist in this project's plain-JVM unit tests (no Robolectric), so injecting it keeps the class itself a **thin, untested adapter** (same category as `AndroidDeviceInfoProvider`) while keeping `AuthProviderFactory` — and its existing test — pure-JVM. `authState` is backed by `FirebaseAuth.AuthStateListener` (mapped to `SignedOut`/`SignedIn(uid)`); `currentIdToken` calls `getIdToken(forceRefresh).await()`; `signOut` calls `firebaseAuth.signOut()`; `signIn` calls `signInWithEmailAndPassword(email, password).await()`, catching the SDK's typed exceptions (`FirebaseAuthInvalidUserException`/`FirebaseAuthInvalidCredentialsException`/anything else) and re-throwing as `AuthSignInException` with a fixed user-facing message per case — the raw SDK exception text is never surfaced to a screen.
+**`FirebaseAuthProvider`** (real implementation for `AUTH_MODE == "firebase"`): constructor-**injects** `FirebaseAuth` plus a `CurrentActivityProvider` rather than resolving either itself — `FirebaseAuth.getInstance()` needs an initialized `FirebaseApp`/Android `Context`, which doesn't exist in this project's plain-JVM unit tests (no Robolectric), so injection keeps the class a **thin, untested adapter** (same category as `AndroidDeviceInfoProvider`) while keeping `AuthProviderFactory` — and its test — pure-JVM. `authState` is backed by `FirebaseAuth.AuthStateListener` (mapped to `SignedOut`/`SignedIn(uid)`); `currentIdToken` calls `getIdToken(forceRefresh).await()`; `signOut` calls `firebaseAuth.signOut()`. Phone verification: `startPhoneVerification` wraps `PhoneAuthProvider.verifyPhoneNumber(PhoneAuthOptions)` in a `callbackFlow`, mapping `onCodeSent`/`onVerificationCompleted` (instant verification → `signInWithCredential` → `Completed`)/`onVerificationFailed` onto `PhoneVerificationEvent`s and the SDK's typed exceptions onto `PhoneAuthError` per the 006 §4.2 table; `confirmCode` calls `signInWithCredential(PhoneAuthProvider.getCredential(verificationId, code))`. Firebase requires an `Activity` for Play Integrity / reCAPTCHA app verification: `fun interface CurrentActivityProvider { fun current(): Activity? }` is a thin framework-touching type (same bucket as `AndroidDeviceInfoProvider`); `MainActivity` registers/clears itself via `AppContainer`, and **only** `FirebaseAuthProvider` consumes it — a `null` activity (not realistically reachable, the UI triggered the call) emits `Failed(APP_VERIFICATION_FAILED)`.
 
-`AuthProviderFactory.create(mode, firebaseProjectId, firebaseAuthProvider: () -> AuthProvider)` gained a third parameter — a **lazy** supplier for the `Firebase` branch, invoked only when `mode == AuthMode.Firebase`. This is the one deliberate interface change from A1/A2 (the "no interface change expected" note in §13 no longer holds): it lets `AuthProviderFactoryTest` exercise the Firebase branch with a plain fake (never touching the real SDK, still 100% pure-JVM) while `AppContainer` — the only real caller — supplies `{ FirebaseAuthProvider(FirebaseAuth.getInstance()) }`, so `FirebaseAuth.getInstance()` is only ever reached on a real device/emulator with Firebase initialized, never from a unit test or an `insecure-local` build.
+`AuthProviderFactory.create(mode, firebaseProjectId, firebaseAuthProvider: () -> AuthProvider)` keeps its lazy-supplier shape — the supplier is invoked only when `mode == AuthMode.Firebase`, letting `AuthProviderFactoryTest` exercise the Firebase branch with a plain fake (never touching the real SDK, still 100% pure-JVM) while `AppContainer` — the only real caller — supplies `{ FirebaseAuthProvider(FirebaseAuth.getInstance(), activityProvider) }`, so the real SDK is only ever reached on a device/emulator with Firebase initialized, never from a unit test or an `insecure-local` build.
 
-**Sign-in UI** (H1 addition — A1/A2 shipped no way for a real user to authenticate, only `DevAuthProvider.signInDev`): `ui/signin/SignInScreen.kt` is a stateless email/password form (`WaldoTextField` × 2 + a `WaldoButton`), driven by `SignInStateHolder` (pure, constructor-injected `AuthProvider`, no `CoroutineScope` needed — same "user-initiated form" shape as `InvitesStateHolder`) via the thin `SignInViewModel` wrapper. `SignInUiState` is `Idle` / `Submitting` / `Error(message)` — there is deliberately no `Success` case: on a successful `signIn`, the state holder returns to `Idle` and `authProvider.authState` itself flips to `SignedIn`, which `WaldoNavHost` observes directly (`LaunchedEffect` on `authState`, pops back to `Home` once `SignedIn` while the current destination is `SignIn`) rather than threading a redundant "it worked" signal back up through the screen's own state. Reached via `Destinations.SignIn` — `WaldoNavHost`'s `Home` screen's sign-in button now branches on the concrete `authProvider` type: a `DevAuthProvider` still calls `signInDev` directly (unchanged dev shortcut, no screen); anything else navigates to `SignIn`.
+**Sign-in UI** (phone-auth rework, specs/006): one screen, two steps — `ui/signin/SignInScreen.kt` stays a single stateless screen on `Destinations.SignIn` that renders either phone entry or code entry from the state (no second nav destination; WhatsApp-style). Existing components suffice: `WaldoTextField` (numeric keyboards; the phone field prefilled `+32`, the code field a plain 6-digit input) + `WaldoButton` + `WaldoErrorState`. It is driven by `SignInStateHolder` (pure; constructor-injected `AuthProvider` **and a `CoroutineScope`** for the resend-cooldown ticker — same shape as `MapStateHolder`) via the thin `SignInViewModel` wrapper. `SignInUiState` implements the 006 §4.1 state machine verbatim: `EnteringPhone(phone, error?)` / `SendingCode(phone)` / `EnteringCode(phone, resendSecondsLeft, error?)` / `ConfirmingCode(phone)`. There is deliberately no `Success` state: on sign-in, `authProvider.authState` flips to `SignedIn`, which `WaldoNavHost` observes directly (`LaunchedEffect` on `authState`, pops back to `Home`) — unchanged principle. `WaldoNavHost`'s former `DevAuthProvider` short-circuit (dev sign-in button bypassing the screen) is **removed**: dev builds also navigate to `SignIn`, so the phone UI is actually exercised locally against `AUTH_MODE=insecure-local`.
 
 Firebase Auth ID-token refresh (tokens live ~1 h, 001 §2.1) is handled entirely by §6.4's retry-once path — it is **not** the same mechanism as §8's push-token refresh, a distinction worth stating explicitly since both are "some kind of token refresh" but trigger different client behavior (retry a call vs. re-register a device).
 
@@ -332,6 +351,7 @@ Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§
 - Fix-queue: `nextBatch()` idempotent (same `batchId`+fixes) until resolved; `markBatchAccepted` removes exactly the acked fixes; `markBatchRejected` drops only named offenders and the remainder gets a fresh `batchId` on the next call; `markBatchFailedTransient` changes nothing (retry-safe); new `enqueue()` during an in-flight batch never joins it; `maxSize` cap is respected; empty pool → `null`, never an empty batch.
 - `LocationSyncCoordinator`: success/transient-failure/rejection/paused outcomes each drive the correct `FixQueueStore` call.
 - `HomeStateHolder`: `Loading → SignedOut` when unauthenticated; `Loading → SignedIn` + successful registration state; registration failure surfaces an error state without crashing the state machine.
+- Phone sign-in (006 §10, Android side): `PhoneNumberNormalizerTest` covers every 006 §3 rule; `SignInStateHolderTest` covers every 006 §4.1 transition against a fake `AuthProvider` — happy path, every `PhoneAuthError` landing in its specced state/message, instant verification from both `SendingCode` and `EnteringCode`, resend blocked until the virtual-time cooldown hits 0 then exactly one re-invocation, `INVALID_CODE` staying on code entry vs `CODE_EXPIRED` returning to phone entry; `DevAuthProvider` two-step shape + unsigned-JWT token; no unit test imports the Firebase SDK.
 - Design system: every component file reads only `WaldoTheme.*` (reviewer spot-check — no automated enforcement in A1).
 
 ## Open questions

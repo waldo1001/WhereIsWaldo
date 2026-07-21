@@ -162,18 +162,52 @@ All request/response field names match 001 verbatim (`camelCase`, identical keys
 
 ---
 
-## 4. Auth abstraction (Firebase, stubbed)
+## 4. Auth abstraction — phone-number sign-in (specs/006)
+
+Sign-in is **phone-number-only** (SMS OTP): flow, state machine, E.164 normalization, and the error/message catalog are normative in [`specs/006-phone-auth.md`](006-phone-auth.md) §3–§5; this section owns the iOS shapes.
 
 ```swift
-public protocol AuthProviding {
+public protocol AuthProviding: AnyObject {
     var currentUserId: String? { get }
     func currentIDToken() async throws -> String
     func refreshIDToken() async throws -> String
     func signOut() throws
+    /// Starts SMS verification for the (already 006 §3-normalized) number.
+    /// Re-calling with the same number = resend. The verification session is
+    /// provider-internal. Throws PhoneAuthError.
+    func startPhoneVerification(phoneNumberE164: String) async throws
+    /// Confirms the code for the in-flight verification; on success currentUserId != nil.
+    func confirmCode(_ code: String) async throws
+}
+
+// The closed error set of 006 §4.2; messages in PhoneAuthUserMessage (pure, WaldoKit)
+public enum PhoneAuthError: Error, Equatable {
+    case invalidPhoneNumber, tooManyRequests, smsQuotaExceeded,
+         appVerificationFailed, invalidCode, codeExpired, network, unknown
 }
 ```
 
-`StubAuthProvider` is the only implementation shipped in I1: an in-memory dev/test double producing a fixed `currentUserId` and an **unsigned** token string shaped like a JWT (matching the backend's `AUTH_MODE=insecure-local`, 001 §2.3) — clearly documented as non-production. The real `FirebaseAuthProvider` (Firebase Auth SDK, real ID tokens) is an **H1 follow-up**: adding it means writing one new type conforming to `AuthProviding` and swapping the app target's composition root — zero change anywhere else. No Firebase SDK dependency is added in I1 (no `GoogleService-Info.plist` exists yet; adding the SDK without it would crash at runtime).
+iOS has no instant verification, so plain `async` methods suffice — no event stream (the Android `Flow` shape, 003 §7, is not mirrored). `PhoneNumberNormalizer` (pure, WaldoKit) implements 006 §3 with rules identical to Android's.
+
+`StubAuthProvider` (dev, `AuthMode == .stubLocal`) implements the two-step phone shape per 006 §5: `startPhoneVerification` records the normalized number; `confirmCode` accepts any non-blank code and sets `currentUserId = <normalized E.164 number>`. Its token is corrected to a **real unsigned JWT** — base64url JSON header/payload carrying `iss`/`aud`/`sub`/`iat`/`exp` (`sub` = the E.164 uid) with an empty signature, like Android's `DevAuthProvider` — because the previous `"stub-header.…"` shape cannot be parsed by the backend's `AUTH_MODE=insecure-local` verifier (its payload isn't base64url JSON), so the iOS dev build never actually worked against a local backend. The fake `iss`/`aud` come from `AppConfig.firebaseProjectId` (§8).
+
+### 4.1 Phone sign-in flow
+
+- **`FirebaseAuthProvider` — the first real `AuthProviding` implementation — lives in the app target (`WheresWaldo/`), not WaldoKit**, keeping WaldoKit Firebase-SDK-free so `swift test` keeps running headless on macOS. It is swapped in at the existing composition-root seam (`RootView`, `AuthMode == .firebase`). Internals: `PhoneAuthProvider.provider().verifyPhoneNumber(_:uiDelegate:nil)` → store the `verificationID` (in-memory + `UserDefaults`, per Firebase guidance — the app may be backgrounded while the SMS arrives); `confirmCode` → `PhoneAuthProvider.provider().credential(withVerificationID:verificationCode:)` + `Auth.auth().signIn(with:)`. SDK failures map onto `PhoneAuthError` per the 006 §4.2 table; raw SDK text never reaches a screen.
+- **APNs is a phone-auth prerequisite (006 §6.6):** Firebase verifies the iOS app via **silent APNs push** — requires the Push Notifications capability + remote-notification background mode on the app target, the APNs auth key uploaded to Firebase, and thin app-delegate forwarding (`Auth.auth().setAPNSToken(_:type:)`, `Auth.auth().canHandleNotification(_:)`) — app-target lifecycle wiring, allowed by §1.1's rule. **Fallback:** without APNs (simulator; key not yet uploaded) Firebase falls back to reCAPTCHA in a web sheet, which requires the `REVERSED_CLIENT_ID` custom URL scheme in Info.plist plus `Auth.auth().canHandle(url)`. Dev/E2E on the simulator uses **Firebase test phone numbers** (006 §6.4), which need neither.
+- **`SignInViewModel`** implements the 006 §4.1 state machine (minus the Android-only instant-verification arrows), with a 30 s resend cooldown driven by injected virtual-time-testable ticking:
+
+```swift
+public enum SignInState: Equatable {
+    case enteringPhone(error: String?)
+    case sendingCode(phone: String)
+    case enteringCode(phone: String, resendSecondsLeft: Int, error: String?)
+    case confirmingCode(phone: String)
+    case signedIn(userId: String)
+}
+```
+
+  (`signedIn` is kept — iOS navigates via the existing `onSignedIn` callback from `RootView`, unlike Android's authState-observing nav.) `SignInScreen` renders phone entry or code entry from the state using existing components (`WaldoTextField`, `WaldoButton`, `ErrorStateView`) — one screen, two steps.
 
 **Push-token refresh → re-registration (001 §4.1, 000 §O4):** `PushTokenProviding` exposes an `AsyncStream<String>` of push-token values (FCM/APNs token). `DeviceRegistrationService` subscribes and calls `POST /devices` with the new `pushToken` on every emission — this is what satisfies "re-`POST /devices` on token refresh"; it is **not** triggered by Firebase ID-token refresh (that's §3.3's concern, a different token, a different reason).
 
@@ -215,6 +249,7 @@ Push tokens are **write-only** (never read back, 001 §4.1/§4.2) — `WaldoKit`
 public struct AppConfig {
     public var baseURL: URL             // default: a placeholder, non-resolving host — see below
     public var authMode: AuthMode       // .stubLocal (default) | .firebase
+    public var firebaseProjectId: String // dev default fine — feeds StubAuthProvider's fake iss/aud (§4)
 }
 public enum AuthMode { case stubLocal, firebase }
 ```
@@ -227,7 +262,7 @@ Default `baseURL` is `https://api.wheres-waldo.invalid/api/v1` — the `.invalid
 
 **Framework note (environment-driven, decided this session):** `Tests/WaldoKitTests/` uses **Swift Testing** (`import Testing`, `@Test`, `#expect`) rather than XCTest. This session's host has only Xcode Command Line Tools installed (no `Xcode.app`), and no `XCTest.framework` exists anywhere on it — `import XCTest` cannot compile here. `Testing.framework` (Swift Testing, XCTest's first-party successor, part of the Swift toolchain since Swift 6) IS present under the Command Line Tools install, but `swift test` doesn't add its framework/plugin search paths automatically in a CLT-only setup; `WaldoKit/Package.swift`'s `WaldoKitTests` target pins them explicitly via `unsafeFlags` (harmless on a full-Xcode host, where these exact paths won't exist and are simply unused) so plain `swift test` works everywhere, including this session. On a full Xcode install (H1-era CI, `macos-14` runners) either framework works fine; Swift Testing was chosen because it is what this session could actually run and verify.
 
-Runs via `swift test` on any host (this session: macOS, headless, no simulator). Coverage (see §10 checklist for the full list): envelope success/error decoding; all 21 `APIErrorCode` cases decode to their case (plus one forward-compat `unknown` case); request-building for every one of the 19 methods in §3.2 (URL, HTTP method, headers incl. `X-Device-Id` only where required, JSON body shape); device-registration request construction (first-registration defaults are the server's job, but the client's *request* omits fields it doesn't have, and never sends role/entitlement data); `FixQueue` batch/idempotency behavior (freeze, retry-same-id, split >100, definitive-rejection new-id, transient-failure same-id); token-refresh triggers (push-token refresh ⇒ re-register call recorded; `AUTH_TOKEN_EXPIRED` ⇒ refresh + retry-once observed on a mock client); design-system `Theme` (light/dark both defined, all token fields present); `SignInViewModel` state transitions (idle → loading → signedIn/error). The Xcode app-target build (and any `xcodebuild`/simulator run) is explicitly **not** part of this session's verification — noted, not attempted, since only Command Line Tools (no Xcode.app) are present here.
+Runs via `swift test` on any host (this session: macOS, headless, no simulator). Coverage (see §10 checklist for the full list): envelope success/error decoding; all 21 `APIErrorCode` cases decode to their case (plus one forward-compat `unknown` case); request-building for every one of the 19 methods in §3.2 (URL, HTTP method, headers incl. `X-Device-Id` only where required, JSON body shape); device-registration request construction (first-registration defaults are the server's job, but the client's *request* omits fields it doesn't have, and never sends role/entitlement data); `FixQueue` batch/idempotency behavior (freeze, retry-same-id, split >100, definitive-rejection new-id, transient-failure same-id); token-refresh triggers (push-token refresh ⇒ re-register call recorded; `AUTH_TOKEN_EXPIRED` ⇒ refresh + retry-once observed on a mock client); design-system `Theme` (light/dark both defined, all token fields present); `SignInViewModel` state transitions per the 006 §4.1 machine (§4.1) against a fake `AuthProviding`. The Xcode app-target build (and any `xcodebuild`/simulator run) is explicitly **not** part of this session's verification — noted, not attempted, since only Command Line Tools (no Xcode.app) are present here.
 
 ---
 
@@ -243,7 +278,7 @@ Runs via `swift test` on any host (this session: macOS, headless, no simulator).
 - `FixQueue`: enqueue→freeze→same-batch-on-retry; accept clears queue; definitive rejection drops + issues new id on next send; queue > 100 splits into sequential batches.
 - Push-token refresh triggers exactly one `registerDevice` call with the new token; ID-token expiry triggers exactly one refresh + one retry, not a device re-registration.
 - `Theme.light` and `Theme.dark` both populate every token in §2.1; components read only `\.theme` (spot-checked by a components test asserting no direct `Color(...)` literal type is reachable — enforced by code review, not automatable in XCTest, so this is a review-gate item, not a test).
-- `SignInViewModel`: `.idle` → `.loading` on submit → `.signedIn` on success / `.error(message)` on failure, and back to `.idle`-equivalent retry affordance.
+- Phone sign-in (006 §10, iOS side): `PhoneNumberNormalizer` covers every 006 §3 rule; `SignInViewModel` covers every 006 §4.1 transition (minus Android-only instant verification) against a fake `AuthProviding` — happy path, every `PhoneAuthError` landing in its specced state/message, resend blocked until the cooldown hits 0 then exactly one re-invocation, `.invalidCode` staying on code entry vs `.codeExpired` returning to phone entry; `StubAuthProvider` two-step shape + unsigned-JWT token whose payload parses as base64url JSON with `sub` = the E.164 uid; no test imports the Firebase SDK.
 
 ## 11. Open questions
 
