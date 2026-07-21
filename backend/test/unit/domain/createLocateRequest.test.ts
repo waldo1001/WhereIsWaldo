@@ -94,7 +94,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // not seeded
     await expectAppError(
       createLocateRequest(baseInput(), { ...deps, entitlementsRepo }),
@@ -126,8 +126,8 @@ describe("domain/locate/createLocateRequest", () => {
   it("throws TRACKING_PAUSED when the target user's devices exist but none are unpaused", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ trackingEnabled: false }));
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: DEVICE_B, trackingEnabled: false }));
+    deps.deviceRepo.seed(TARGET_UID, device({ trackingEnabled: false }));
+    deps.deviceRepo.seed(TARGET_UID, device({ deviceId: DEVICE_B, trackingEnabled: false }));
     await expectAppError(createLocateRequest(baseInput(), deps), "TRACKING_PAUSED");
   });
 
@@ -143,7 +143,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("throws TRACKING_PAUSED for a paused targetDeviceId", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ trackingEnabled: false }));
+    deps.deviceRepo.seed(TARGET_UID, device({ trackingEnabled: false }));
     await expectAppError(
       createLocateRequest(baseInput({ body: { targetDeviceId: DEVICE_A } }), deps),
       "TRACKING_PAUSED",
@@ -153,7 +153,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("creates a request directly via targetDeviceId when it is unpaused (distinct from the paused case)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ trackingEnabled: true }));
+    deps.deviceRepo.seed(TARGET_UID, device({ trackingEnabled: true }));
 
     const result = await createLocateRequest(baseInput({ body: { targetDeviceId: DEVICE_A } }), deps);
 
@@ -162,11 +162,21 @@ describe("domain/locate/createLocateRequest", () => {
     expect(result.targetDeviceId).toBe(DEVICE_A);
   });
 
-  it("does not treat another user's device as a candidate for targetUserId resolution", async () => {
+  it("does not treat a data-integrity mismatched-owner row in the target's own partition as a candidate (defense-in-depth)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    // Seeded under a different owner entirely — must not satisfy "target user has devices".
-    deps.deviceRepo.seed(FAMILY_ID, device({ ownerUserId: "someone-else" }));
+    // Stored under TARGET_UID's own partition, but the ownerUserId field disagrees —
+    // structurally shouldn't happen (every write keys by its own ownerUserId).
+    deps.deviceRepo.seed(TARGET_UID, device({ ownerUserId: "someone-else" }));
+
+    await expectAppError(createLocateRequest(baseInput(), deps), "DEVICE_NOT_FOUND");
+  });
+
+  it("does not treat a stranger's device (not a member of this family) as a candidate — fan-out only visits the family's roster partitions (002 §2.4)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    // A perfectly valid device, but owned by someone who is NOT in this family's roster.
+    deps.deviceRepo.seed("stranger", device({ deviceId: DEVICE_A, ownerUserId: "stranger" }));
 
     await expectAppError(createLocateRequest(baseInput(), deps), "DEVICE_NOT_FOUND");
   });
@@ -174,7 +184,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("falls back to the raw uid for requestedByName when the requester isn't found in the roster", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: "fcm-token-a" }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: "fcm-token-a" }));
 
     const result = await createLocateRequest(baseInput({ uid: "ghost-uid" }), deps);
 
@@ -186,7 +196,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("creates a 201 pending request, returns instant lastKnown null when never reported, expiresAt = now+60s", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
 
     const result = await createLocateRequest(baseInput(), deps);
 
@@ -203,8 +213,8 @@ describe("domain/locate/createLocateRequest", () => {
   it("returns the instant lastKnown answer when the target device has reported before", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.deviceRepo.seed(TARGET_UID, device());
+    deps.lastKnownRepo.seed(TARGET_UID, {
       deviceId: DEVICE_A,
       lat: 51.0543,
       lon: 3.7174,
@@ -230,11 +240,11 @@ describe("domain/locate/createLocateRequest", () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_A, pushToken: undefined, lastSeenAt: "2026-07-19T09:09:00Z" }),
     );
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_B, pushToken: "fcm-token-b", lastSeenAt: "2026-07-19T09:00:00Z" }),
     );
 
@@ -248,11 +258,11 @@ describe("domain/locate/createLocateRequest", () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_A, pushToken: "fcm-token-a", lastSeenAt: "2026-07-19T09:00:00Z" }),
     );
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_B, pushToken: "fcm-token-b", lastSeenAt: "2026-07-19T09:05:00Z" }),
     );
 
@@ -265,11 +275,11 @@ describe("domain/locate/createLocateRequest", () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_A, pushToken: "fcm-token-a", lastSeenAt: "2026-07-19T09:00:00Z" }),
     );
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_B, pushToken: "fcm-token-b", lastSeenAt: "2026-07-19T09:00:00Z" }),
     );
 
@@ -282,11 +292,11 @@ describe("domain/locate/createLocateRequest", () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_A, pushToken: undefined, lastSeenAt: "2026-07-19T09:00:00Z" }),
     );
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      TARGET_UID,
       device({ deviceId: DEVICE_B, pushToken: undefined, lastSeenAt: "2026-07-19T09:05:00Z" }),
     );
 
@@ -299,7 +309,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("a candidate whose token IS present but pushInvalid:true does not count as a valid token", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: "stale-token", pushInvalid: true }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: "stale-token", pushInvalid: true }));
 
     const result = await createLocateRequest(baseInput(), deps);
 
@@ -310,7 +320,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("creates as pushFailed without calling the pushSender when the chosen device has no token at all", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: undefined }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: undefined }));
 
     const result = await createLocateRequest(baseInput(), deps);
 
@@ -321,7 +331,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("sends the LOCATE_REQUEST push with requestId/requestedByName/expiresAt when the device has a valid token", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: "fcm-token-a" }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: "fcm-token-a" }));
 
     const result = await createLocateRequest(baseInput(), deps);
 
@@ -340,20 +350,20 @@ describe("domain/locate/createLocateRequest", () => {
   it("pushFailed path (invalidToken outcome) marks the device pushInvalid:true", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: "fcm-token-a" }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: "fcm-token-a" }));
     deps.pushSender.setOutcome("invalidToken");
 
     const result = await createLocateRequest(baseInput(), deps);
 
     expect(result.status).toBe("pushFailed");
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_A);
+    const stored = await deps.deviceRepo.getDevice(TARGET_UID, DEVICE_A);
     expect(stored?.pushInvalid).toBe(true);
   });
 
   it("a transport 'error' outcome does not flip status away from pending (push is best-effort)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device({ pushToken: "fcm-token-a" }));
+    deps.deviceRepo.seed(TARGET_UID, device({ pushToken: "fcm-token-a" }));
     deps.pushSender.setOutcome("error");
 
     const result = await createLocateRequest(baseInput(), deps);
@@ -364,7 +374,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("coalesces with an existing pending request for the same target device, returning 200", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
 
     const first = await createLocateRequest(baseInput(), deps);
     expect(first.created).toBe(true);
@@ -379,7 +389,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("coalesced (200) requests are excluded from the locateRequests usage quota metric", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
 
     await createLocateRequest(baseInput(), deps);
     await createLocateRequest(baseInput(), deps);
@@ -392,7 +402,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("throws LIMIT_EXCEEDED with details.limit locateRequestsPerDay once the daily quota is reached", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
     await deps.usageRepo.increment(FAMILY_ID, "locateRequests", "2026-07-19", 100); // free plan limit
 
     await expectAppError(createLocateRequest(baseInput(), deps), "LIMIT_EXCEEDED", {
@@ -403,7 +413,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("allows a create at exactly one below the quota (boundary: only >= the limit blocks)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
     await deps.usageRepo.increment(FAMILY_ID, "locateRequests", "2026-07-19", 99);
 
     const result = await createLocateRequest(baseInput(), deps);
@@ -413,7 +423,7 @@ describe("domain/locate/createLocateRequest", () => {
   it("increments locateRequests and apiCalls usage exactly once on a 201 create", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, device());
+    deps.deviceRepo.seed(TARGET_UID, device());
 
     await createLocateRequest(baseInput(), deps);
 

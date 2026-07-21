@@ -43,7 +43,7 @@ function buildDeps() {
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
   const deviceRepo = new InMemoryDeviceRepo();
   // Default: the request's actual target device, correctly registered to its real owner.
-  deviceRepo.seed(FAMILY_ID, device());
+  deviceRepo.seed(TARGET_UID, device());
   return {
     deviceRepo,
     locateRequestRepo: new InMemoryLocateRequestRepo(),
@@ -139,7 +139,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
     // The caller's own second device — legitimately registered to them, just not the
     // one this locate request targeted. Must be AUTH_FORBIDDEN, not DEVICE_NOT_FOUND.
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: OTHER_DEVICE_ID, ownerUserId: TARGET_UID }));
+    deps.deviceRepo.seed(TARGET_UID, device({ deviceId: OTHER_DEVICE_ID, ownerUserId: TARGET_UID }));
     await expectAppError(
       fulfillLocateRequest(baseInput({ deviceId: OTHER_DEVICE_ID }), deps),
       "AUTH_FORBIDDEN",
@@ -176,7 +176,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
     );
 
     // And no forged fix was written anywhere.
-    expect(await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID)).toBeNull();
+    expect(await deps.lastKnownRepo.get(TARGET_UID, TARGET_DEVICE_ID)).toBeNull();
     expect(deps.historyStore.fixes.length).toBe(0);
   });
 
@@ -216,7 +216,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
 
     await fulfillLocateRequest(baseInput(), deps);
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(TARGET_UID, TARGET_DEVICE_ID);
     expect(stored?.lat).toBe(51.0544);
     expect(stored?.lon).toBe(3.717);
     expect(stored?.accuracyM).toBe(4.8);
@@ -259,7 +259,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
   it("does not overwrite last-known with an older fix (only-newer rule)", async () => {
     const deps = buildDeps();
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.lastKnownRepo.seed(TARGET_UID, {
       deviceId: TARGET_DEVICE_ID,
       lat: 10,
       lon: 20,
@@ -272,7 +272,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
 
     await fulfillLocateRequest(baseInput(), deps);
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(TARGET_UID, TARGET_DEVICE_ID);
     expect(stored?.lat).toBe(10);
   });
 
@@ -285,7 +285,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
       deps,
     );
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(TARGET_UID, TARGET_DEVICE_ID);
     expect(stored?.altitudeM).toBe(8.0);
     expect(stored?.speedMps).toBe(1.5);
     expect(stored?.bearingDeg).toBe(90);
@@ -348,7 +348,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
 
     await expectAppError(fulfillLocateRequest(baseInput(), deps), "LOCATE_REQUEST_EXPIRED");
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, TARGET_DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(TARGET_UID, TARGET_DEVICE_ID);
     expect(stored?.lat).toBe(51.0544);
     expect(deps.historyStore.fixes.length).toBe(1);
 
@@ -369,7 +369,7 @@ describe("domain/locate/fulfillLocateRequest", () => {
     // DeviceRepo IS consulted now (for the §1.2 ownership check), but trackingEnabled
     // is deliberately never inspected — a paused device must still be able to fulfill.
     const deps = buildDeps();
-    deps.deviceRepo.seed(FAMILY_ID, device({ trackingEnabled: false }));
+    deps.deviceRepo.seed(TARGET_UID, device({ trackingEnabled: false }));
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
 
     const result = await fulfillLocateRequest(baseInput(), deps);

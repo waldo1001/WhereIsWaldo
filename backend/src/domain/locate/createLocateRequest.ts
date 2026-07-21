@@ -1,4 +1,7 @@
 // specs/001 §6.1 — create locate request. Pure domain logic: no Azure/Google imports.
+// Devices/LastKnown are keyed by ownerUserId, not familyId (002 §2.4/§2.5, B8 re-key):
+// target resolution fans out across the family's per-owner partitions
+// (src/domain/family/deviceFanout.ts) instead of a single shared family scan.
 
 import { AppError } from "../../http/errors";
 import { createLocateRequestRequestSchema, parseOrThrow } from "../../http/validate";
@@ -7,6 +10,7 @@ import type {
   DeviceRecord,
   DeviceRepo,
   EntitlementsRepo,
+  FamilyMember,
   FamilyRepo,
   LastKnownRecord,
   LastKnownRepo,
@@ -16,6 +20,7 @@ import type {
   UsageRepo,
 } from "../../ports/repositories";
 import type { PushSender } from "../../ports/pushSender";
+import { findDeviceInFamily, listDevicesForMembers } from "../family/deviceFanout";
 import { getFeatures, type Features } from "../plan";
 
 const REQUEST_ID_LENGTH = 20;
@@ -74,14 +79,16 @@ function mostRecentlySeen(devices: DeviceRecord[]): DeviceRecord {
   );
 }
 
-/** specs/001 §6.1 ordered target resolution. */
+/** specs/001 §6.1 ordered target resolution. Fans out across the family's per-owner
+ * Devices partitions (`members` is the caller's family roster) — a target device may
+ * belong to any family member, not just the caller. */
 async function resolveTarget(
   body: { targetUserId?: string; targetDeviceId?: string },
-  familyId: string,
-  deps: CreateLocateRequestDeps,
+  members: FamilyMember[],
+  deviceRepo: DeviceRepo,
 ): Promise<{ targetUserId: string; device: DeviceRecord }> {
   if (body.targetDeviceId) {
-    const device = await deps.deviceRepo.getDevice(familyId, body.targetDeviceId);
+    const device = await findDeviceInFamily(members, body.targetDeviceId, deviceRepo);
     if (!device) {
       throw new AppError("DEVICE_NOT_FOUND", "unknown targetDeviceId");
     }
@@ -92,7 +99,7 @@ async function resolveTarget(
   }
 
   const targetUserId = body.targetUserId as string;
-  const familyDevices = await deps.deviceRepo.listDevices(familyId);
+  const familyDevices = await listDevicesForMembers(members, deviceRepo);
   const candidates = familyDevices.filter((d) => d.ownerUserId === targetUserId);
   if (candidates.length === 0) {
     throw new AppError("DEVICE_NOT_FOUND", "target user has no registered devices");
@@ -106,12 +113,7 @@ async function resolveTarget(
   return { targetUserId, device: mostRecentlySeen(pool) };
 }
 
-async function resolveRequesterDisplayName(
-  uid: string,
-  familyId: string,
-  deps: CreateLocateRequestDeps,
-): Promise<string> {
-  const members = await deps.familyRepo.listMembers(familyId);
+function resolveRequesterDisplayName(uid: string, members: FamilyMember[]): string {
   const requester = members.find((member) => member.userId === uid);
   return requester?.displayName ?? uid;
 }
@@ -137,12 +139,15 @@ export async function createLocateRequest(
   const features = getFeatures(entitlements.subscriptionStatus);
 
   const body = parseOrThrow(createLocateRequestRequestSchema, input.body);
-  const { targetUserId, device } = await resolveTarget(body, familyId, deps);
+  const members = await deps.familyRepo.listMembers(familyId);
+  const { targetUserId, device } = await resolveTarget(body, members, deps.deviceRepo);
   const targetDeviceId = device.deviceId;
 
   const now = deps.clock.now();
   const date = usageDate(now);
-  const lastKnownRecord = await deps.lastKnownRepo.get(familyId, targetDeviceId);
+  // LastKnown is keyed by ownerUserId (002 §2.5, B8 re-key) — the target's own partition,
+  // known once resolveTarget identifies the device's owner.
+  const lastKnownRecord = await deps.lastKnownRepo.get(targetUserId, targetDeviceId);
   const lastKnown = toLastKnownAnswer(targetDeviceId, lastKnownRecord);
 
   const pending = await deps.locateRequestRepo.listPendingByTargetDevice(familyId, targetDeviceId);
@@ -174,7 +179,7 @@ export async function createLocateRequest(
 
   let status: LocateRequestStatus = "pending";
   if (hasValidToken(device)) {
-    const requestedByName = await resolveRequesterDisplayName(input.uid, familyId, deps);
+    const requestedByName = resolveRequesterDisplayName(input.uid, members);
     const outcome = await deps.pushSender.send({
       token: device.pushToken as string,
       type: "LOCATE_REQUEST",
@@ -182,7 +187,9 @@ export async function createLocateRequest(
     });
     if (outcome === "invalidToken") {
       status = "pushFailed";
-      await deps.deviceRepo.putDevice(familyId, { ...device, pushInvalid: true });
+      // Write back into the DEVICE OWNER's own partition (002 §2.4) — the target, not
+      // necessarily the requester.
+      await deps.deviceRepo.putDevice(device.ownerUserId, { ...device, pushInvalid: true });
     }
   } else {
     status = "pushFailed";

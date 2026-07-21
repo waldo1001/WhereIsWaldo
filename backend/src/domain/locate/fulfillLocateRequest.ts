@@ -91,11 +91,14 @@ export async function fulfillLocateRequest(
 
   // specs/001 §1.2 — device-ownership precondition (mirrors reportLocations.ts): the
   // header is required, and MUST resolve to a device actually registered to this caller.
+  // Devices are keyed by ownerUserId (002 §2.4, B8 re-key): a point read in the caller's
+  // OWN partition — no family fan-out needed, since a device can only ever live in its
+  // owner's partition.
   if (!input.deviceId) {
     throw new AppError("AUTH_FORBIDDEN", "X-Device-Id header is required to fulfill a locate request");
   }
   const callerDeviceId = input.deviceId;
-  const device = await deps.deviceRepo.getDevice(familyId, callerDeviceId);
+  const device = await deps.deviceRepo.getDevice(input.uid, callerDeviceId);
   if (!device || device.ownerUserId !== input.uid) {
     throw new AppError("DEVICE_NOT_FOUND", "X-Device-Id is not registered to the calling user");
   }
@@ -127,7 +130,10 @@ export async function fulfillLocateRequest(
       receivedAt,
       source: body.fix.source,
     };
-    await deps.lastKnownRepo.upsertIfNewer(familyId, lastKnownCandidate);
+    // LastKnown is keyed by ownerUserId (002 §2.5, B8 re-key) — the target's own
+    // partition; record.targetUserId is already known (callerDeviceId === targetDeviceId
+    // and the ownership check above proved input.uid owns it, so they're the same value).
+    await deps.lastKnownRepo.upsertIfNewer(record.targetUserId, lastKnownCandidate);
     await deps.historyStore.appendFix(
       familyId,
       record.targetUserId,
