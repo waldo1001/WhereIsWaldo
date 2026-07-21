@@ -26,7 +26,7 @@ public enum AuthError: Error, Equatable {
 
 /// specs/006-phone-auth.md §4.2 — the closed client-side error set both platforms map Firebase SDK
 /// failures onto. Raw SDK text never reaches a screen; see `PhoneAuthError.userMessage`.
-public enum PhoneAuthError: Error, Equatable {
+public enum PhoneAuthError: Error, Equatable, CaseIterable {
     case invalidPhoneNumber
     case tooManyRequests
     case smsQuotaExceeded
