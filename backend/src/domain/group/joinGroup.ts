@@ -75,6 +75,17 @@ export async function joinGroup(input: JoinGroupInput, deps: JoinGroupDeps): Pro
     throw new AppError("GROUP_CODE_INVALID", "unknown or rotated group join code");
   }
 
+  // `Groups.meta.code` is the authoritative live code, not the `GroupCodes` lookup alone
+  // (002 §2.11, 001 §12.7 security fix): rotate's sequence is createCode -> updateGroupMeta
+  // -> deleteCode, so the OLD code's GroupCodes row can still resolve for a brief window (or
+  // indefinitely, if the process crashes/times out before the deleteCode cleanup runs). Once
+  // updateGroupMeta has committed, meta.code makes the stale row inert regardless of whether
+  // cleanup ever completes — this is what makes "the old code stops working instantly"
+  // (001 §12.7) actually true, and makes rotation self-healing on crash.
+  if (meta.code !== normalizedCode) {
+    throw new AppError("GROUP_CODE_INVALID", "unknown or rotated group join code");
+  }
+
   const callerFamilyId = profile?.familyId ?? null;
   const callerFeatures = await resolveFeatures(callerFamilyId, deps.entitlementsRepo);
 

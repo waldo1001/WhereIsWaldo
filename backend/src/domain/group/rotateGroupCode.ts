@@ -2,14 +2,16 @@
 // is always exactly one live code per active group." Pure domain logic: no Azure/Google
 // imports. Order matches 002 §2.11: conditional-insert new row -> guarded-update
 // Groups.meta.code -> delete old row — a crash between steps still resolves (old or new,
-// never neither).
+// never neither); joinGroup.ts additionally cross-checks the presented code against the
+// authoritative `Groups.meta.code` (001 §12.7 security fix, 002 §2.11), which is what
+// actually makes "the old code stops working instantly" true even mid-rotation, independent
+// of whether this createCode/updateGroupMeta/deleteCode sequence has finished.
 //
-// State gating: 005 §2.3's lazy-enforcement matrix has no explicit row for rotate. This
-// implementation gates it like leave/kick (001 §12.8/§12.9) — allowed on active/ended
-// (grace)/archived, rejected only once truly `expired` (410, about to be swept) — rather
-// than like PATCH (001 §12.4, which also blocks `archived`): rotating a code doesn't
-// conflict with any archived-specific invariant the way extending endsAt would. Flagged as
-// an explicit assumption pending spec clarification (see task report).
+// State gating: 005 §2.3's lazy-enforcement matrix now documents this explicitly — gated
+// like leave/kick (001 §12.8/§12.9): allowed on active/ended (grace)/archived, rejected only
+// once truly `expired` (410, about to be swept) — rather than like PATCH (001 §12.4, which
+// also blocks `archived`): rotating a code doesn't conflict with any archived-specific
+// invariant the way extending endsAt would.
 import { AppError } from "../../http/errors";
 import type { Clock, InviteCodeGenerator } from "../../ports/support";
 import type { EntitlementsRepo, GroupCodeRepo, GroupRepo, UsageRepo } from "../../ports/repositories";
