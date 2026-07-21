@@ -52,4 +52,35 @@ public final class AppCoordinator: ObservableObject {
     public func showAcceptInvite(prefillCode: String = "") {
         route = .acceptInvite(prefillCode: prefillCode)
     }
+
+    // MARK: - I5 groups routes (specs/004 §3.4)
+
+    public func showGroupsList() {
+        route = .groupsList
+    }
+
+    public func showCreateGroup() {
+        route = .createGroup
+    }
+
+    public func showGroupDetail(groupId: String) {
+        route = .groupDetail(groupId: groupId)
+    }
+
+    public func showGroupJoin(prefillCode: String = "") {
+        route = .groupJoin(prefillCode: prefillCode)
+    }
+
+    public func showGroupMap(groupId: String) {
+        route = .groupMap(groupId: groupId)
+    }
+
+    /// The app target's `onOpenURL` forwards here (specs/004 §3.4) — `GroupCodeParsing` (pure,
+    /// WaldoKit) validates/normalizes the incoming `waldo://group-join?code=…` link BEFORE any
+    /// route change; an unrecognized URL is silently ignored (no route change, no crash) rather
+    /// than surfacing a raw error for what may be an unrelated/malformed external URL.
+    public func handleDeepLink(_ url: URL) {
+        guard let code = GroupCodeParsing.normalize(url.absoluteString) else { return }
+        route = .groupJoin(prefillCode: code)
+    }
 }

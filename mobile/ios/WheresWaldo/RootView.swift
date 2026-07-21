@@ -48,7 +48,8 @@ struct RootView: View {
                     onSelectLocate: { target, name in coordinator.showLocate(target: target, targetDisplayName: name) },
                     onSelectDevices: { isParent in coordinator.showDeviceSettings(isParent: isParent) },
                     onSelectFamily: { coordinator.showFamilyMembers() },
-                    onSelectInvite: { coordinator.showCreateInvite() }
+                    onSelectInvite: { coordinator.showCreateInvite() },
+                    onSelectGroups: { coordinator.showGroupsList() }
                 )
             case .liveMap:
                 LiveMapScreen(viewModel: LiveMapViewModel(apiClient: apiClient), renderer: defaultMapRenderer)
@@ -69,6 +70,39 @@ struct RootView: View {
                 CreateInviteScreen(viewModel: CreateInviteViewModel(apiClient: apiClient))
             case .acceptInvite(let prefillCode):
                 AcceptInviteScreen(viewModel: AcceptInviteViewModel(apiClient: apiClient), prefillInviteCode: prefillCode)
+
+            // MARK: - I5 groups routes (specs/004 §3.4)
+
+            case .groupsList:
+                GroupsListScreen(
+                    viewModel: GroupsListViewModel(apiClient: apiClient),
+                    onSelectGroup: { groupId in coordinator.showGroupDetail(groupId: groupId) },
+                    onCreateGroup: { coordinator.showCreateGroup() },
+                    onJoinGroup: { coordinator.showGroupJoin() }
+                )
+            case .createGroup:
+                CreateGroupScreen(
+                    viewModel: CreateGroupViewModel(apiClient: apiClient),
+                    onCreated: { group in coordinator.showGroupDetail(groupId: group.groupId) }
+                )
+            case .groupDetail(let groupId):
+                GroupDetailScreen(
+                    viewModel: GroupDetailViewModel(apiClient: apiClient, groupId: groupId),
+                    onSelectMap: { coordinator.showGroupMap(groupId: groupId) },
+                    onExit: { coordinator.showGroupsList() }
+                )
+            case .groupJoin(let prefillCode):
+                GroupJoinScreen(
+                    viewModel: GroupJoinViewModel(apiClient: apiClient),
+                    prefillCode: prefillCode,
+                    onJoined: { group in coordinator.showGroupDetail(groupId: group.groupId) }
+                )
+            case .groupMap(let groupId):
+                GroupMapScreen(
+                    viewModel: GroupMapViewModel(apiClient: apiClient, groupId: groupId),
+                    renderer: defaultMapRenderer,
+                    onExit: { coordinator.showGroupsList() }
+                )
             }
         }
         .environment(\.theme, colorScheme == .dark ? .dark : .light)

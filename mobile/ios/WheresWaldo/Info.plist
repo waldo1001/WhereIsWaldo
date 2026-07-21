@@ -29,5 +29,17 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<!-- specs/004-ios-client.md §3.4, specs/005-temporary-groups.md §5 — the group-join deep
+	     link (waldo://group-join?code=…), forwarded via onOpenURL to
+	     AppCoordinator.handleDeepLink. HTTPS universal links are deferred (000 §O16). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>waldo</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

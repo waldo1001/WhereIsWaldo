@@ -43,4 +43,52 @@ struct HomeViewModelTests {
             return
         }
     }
+
+    // MARK: - Family-less (review-gate finding #3, specs/005 §1, 001 §1.5) — a signed-in user
+    // without a family is first-class, not a dead end: `FAMILY_NOT_FOUND`/`PROFILE_NOT_FOUND` on
+    // the family fetch must land in a distinct, renderable state (not the generic `.error`), so
+    // `HomeScreen` can still offer Groups — the one destination that works without a family.
+
+    @Test func load_familyNotFound_setsFamilylessState() async {
+        let api = FakeAPIClient()
+        api.getMyFamilyHandler = {
+            throw APIError.server(APIErrorBody(code: .familyNotFound, message: "no family", details: nil, requestId: "r1"), httpStatus: 404)
+        }
+        let viewModel = HomeViewModel(apiClient: api)
+
+        await viewModel.load()
+
+        #expect(viewModel.state == .familyless)
+    }
+
+    @Test func load_profileNotFound_setsFamilylessState() async {
+        // A brand-new signed-in user with no profile at all yet (001 §1.5.3) is likewise
+        // family-less, not a dead end — same rendering as FAMILY_NOT_FOUND.
+        let api = FakeAPIClient()
+        api.getMyFamilyHandler = {
+            throw APIError.server(APIErrorBody(code: .profileNotFound, message: "no profile", details: nil, requestId: "r1"), httpStatus: 404)
+        }
+        let viewModel = HomeViewModel(apiClient: api)
+
+        await viewModel.load()
+
+        #expect(viewModel.state == .familyless)
+    }
+
+    @Test func load_otherServerError_staysGenericError() async {
+        // Only the two family-less-signalling codes get the special state — everything else
+        // (incl. other 4xx/5xx codes) keeps the existing generic error rendering.
+        let api = FakeAPIClient()
+        api.getMyFamilyHandler = {
+            throw APIError.server(APIErrorBody(code: .internalError, message: "boom", details: nil, requestId: "r1"), httpStatus: 500)
+        }
+        let viewModel = HomeViewModel(apiClient: api)
+
+        await viewModel.load()
+
+        guard case .error = viewModel.state else {
+            Issue.record("expected .error state, got \(viewModel.state)")
+            return
+        }
+    }
 }

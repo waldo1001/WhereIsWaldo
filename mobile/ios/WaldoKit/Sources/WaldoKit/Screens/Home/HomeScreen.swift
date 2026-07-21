@@ -13,6 +13,7 @@ public struct HomeScreen: View {
     private let onSelectDevices: (Bool) -> Void
     private let onSelectFamily: () -> Void
     private let onSelectInvite: () -> Void
+    private let onSelectGroups: () -> Void
 
     public init(
         viewModel: HomeViewModel,
@@ -22,7 +23,8 @@ public struct HomeScreen: View {
         onSelectLocate: @escaping (LocateTarget, String) -> Void,
         onSelectDevices: @escaping (Bool) -> Void,
         onSelectFamily: @escaping () -> Void,
-        onSelectInvite: @escaping () -> Void
+        onSelectInvite: @escaping () -> Void,
+        onSelectGroups: @escaping () -> Void
     ) {
         self.viewModel = viewModel
         self.onSelectMap = onSelectMap
@@ -32,6 +34,7 @@ public struct HomeScreen: View {
         self.onSelectDevices = onSelectDevices
         self.onSelectFamily = onSelectFamily
         self.onSelectInvite = onSelectInvite
+        self.onSelectGroups = onSelectGroups
     }
 
     public var body: some View {
@@ -52,6 +55,8 @@ public struct HomeScreen: View {
             ErrorStateView(message: message) {
                 Task { await viewModel.load() }
             }
+        case .familyless:
+            familylessContent
         case .loaded(let myUserId, let isParent, let familyName, let otherMembers):
             ScrollView {
                 VStack(spacing: theme.spacing.md) {
@@ -71,9 +76,28 @@ public struct HomeScreen: View {
                     if isParent {
                         WaldoButton("Invite someone", style: .secondary) { onSelectInvite() }
                     }
+                    // specs/004-ios-client.md §3.4 (005) — groups are independent of family
+                    // membership; this is the minimal reachability wiring for the feature, same
+                    // shape as every other button above (no bottom-nav/drawer component exists
+                    // yet, per I2's own documented convention).
+                    WaldoButton("Groups", style: .secondary) { onSelectGroups() }
                 }
                 .padding(theme.spacing.xl)
             }
         }
+    }
+
+    /// review-gate finding #3 (specs/005 §1, 001 §1.5) — a signed-in user without a family is NOT
+    /// a dead end: this is no longer a plain error banner, and Groups (the one destination that
+    /// works without a family, 001 §1.5.4) is unconditionally reachable from here.
+    private var familylessContent: some View {
+        VStack(spacing: theme.spacing.md) {
+            EmptyStateView(
+                title: "No family yet",
+                message: "You don't belong to a family, but you can still create or join a temporary group."
+            )
+            WaldoButton("Groups") { onSelectGroups() }
+        }
+        .padding(theme.spacing.xl)
     }
 }
