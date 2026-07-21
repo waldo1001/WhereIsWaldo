@@ -1,8 +1,8 @@
 // specs/001 §12.1 `POST /api/v1/groups`, §12.2 `GET /api/v1/groups`, §12.3
-// `GET /api/v1/groups/{groupId}`, §12.6 `POST /api/v1/groups/join`. Thin: parse ->
-// authenticate -> domain -> envelope. No business logic here (excluded from mutation, no
-// unit tests — integration tests later). Group controls (§12.4-§12.5/§12.7-§12.9, B10) and
-// the group live map (§12.10, B11) are out of this task's scope.
+// `GET /api/v1/groups/{groupId}`, §12.6 `POST /api/v1/groups/join`, §12.10
+// `GET /api/v1/groups/{groupId}/locations/latest`. Thin: parse -> authenticate -> domain ->
+// envelope. No business logic here (excluded from mutation, no unit tests — integration
+// tests later). Group controls (§12.4-§12.5/§12.7-§12.9, B10) are out of this task's scope.
 
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 import { randomUUID } from "node:crypto";
@@ -14,11 +14,13 @@ import { createGroup } from "../domain/group/createGroup";
 import { listGroups } from "../domain/group/listGroups";
 import { getGroupDetail } from "../domain/group/getGroupDetail";
 import { joinGroup } from "../domain/group/joinGroup";
+import { getGroupLatestLocations } from "../domain/group/getGroupLatestLocations";
 import { createTokenVerifier } from "../adapters/auth/firebaseJoseVerifier";
 import { TableUserRepo } from "../adapters/tables/usersTableRepo";
 import { TableGroupRepo } from "../adapters/tables/groupsTableRepo";
 import { TableGroupCodeRepo } from "../adapters/tables/groupCodesTableRepo";
 import { TableGroupExpiryRepo } from "../adapters/tables/groupExpiryTableRepo";
+import { TableGroupLastKnownRepo } from "../adapters/tables/groupLastKnownTableRepo";
 import { TableEntitlementsRepo } from "../adapters/tables/entitlementsTableRepo";
 import { TableUsageRepo } from "../adapters/tables/usageTableRepo";
 import { SystemClock } from "../adapters/support/systemClock";
@@ -30,6 +32,7 @@ const userRepo = new TableUserRepo();
 const groupRepo = new TableGroupRepo();
 const groupCodeRepo = new TableGroupCodeRepo();
 const groupExpiryRepo = new TableGroupExpiryRepo();
+const groupLastKnownRepo = new TableGroupLastKnownRepo();
 const entitlementsRepo = new TableEntitlementsRepo();
 const usageRepo = new TableUsageRepo();
 const clock = new SystemClock();
@@ -136,6 +139,26 @@ app.http("joinGroup", {
       return { status: 200, jsonBody: ok(data, features) };
     } catch (err) {
       return errorResponse(err, requestId, context, "joinGroup");
+    }
+  },
+});
+
+app.http("getGroupLatestLocations", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}/locations/latest",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      const result = await getGroupLatestLocations(
+        { uid: auth.uid, familyId: auth.familyId, groupId },
+        { groupRepo, groupLastKnownRepo, entitlementsRepo, usageRepo, clock },
+      );
+      return { status: 200, jsonBody: ok({ members: result.members }, result.features) };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "getGroupLatestLocations");
     }
   },
 });

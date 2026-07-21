@@ -1,0 +1,90 @@
+// specs/002 §2.12 `GroupLastKnown` table — keyed by groupId, `member:{userId}` rows.
+// Integration-tested later against Azurite; no unit tests here (thin adapter, excluded
+// from mutation). Mirrors src/adapters/tables/lastKnownTableRepo.ts's only-newer idiom.
+
+import { odata, RestError } from "@azure/data-tables";
+import { createTableClient } from "./tableClientFactory";
+import type { GroupLastKnownRecord, GroupLastKnownRepo } from "../../ports/repositories";
+
+const MEMBER_PREFIX = "member:";
+const MAX_RETRIES = 1; // one retry on ETag race (002 §2.12, same idiom as §2.5); second loss = skip.
+
+function isNotFound(err: unknown): boolean {
+  return err instanceof RestError && err.statusCode === 404;
+}
+
+function isPreconditionFailed(err: unknown): boolean {
+  return err instanceof RestError && (err.statusCode === 412 || err.statusCode === 409);
+}
+
+function toRecord(userId: string, entity: Record<string, unknown>): GroupLastKnownRecord {
+  return {
+    userId,
+    lat: Number(entity.lat),
+    lon: Number(entity.lon),
+    accuracyM: Number(entity.accuracyM),
+    recordedAt: String(entity.recordedAt),
+    receivedAt: String(entity.receivedAt),
+    syncIntervalMinutes: Number(entity.syncIntervalMinutes),
+  };
+}
+
+export class TableGroupLastKnownRepo implements GroupLastKnownRepo {
+  private readonly client = createTableClient("GroupLastKnown");
+
+  async upsertIfNewer(groupId: string, record: GroupLastKnownRecord): Promise<boolean> {
+    const rowKey = `${MEMBER_PREFIX}${record.userId}`;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      let existingEtag: string | undefined;
+      try {
+        const entity = await this.client.getEntity(groupId, rowKey);
+        if (new Date(String(entity.recordedAt)).getTime() >= new Date(record.recordedAt).getTime()) {
+          return false; // stored is already the same age or newer.
+        }
+        existingEtag = entity.etag;
+      } catch (err) {
+        if (!isNotFound(err)) throw err;
+      }
+
+      const entity = {
+        partitionKey: groupId,
+        rowKey,
+        lat: record.lat,
+        lon: record.lon,
+        accuracyM: record.accuracyM,
+        recordedAt: record.recordedAt,
+        receivedAt: record.receivedAt,
+        syncIntervalMinutes: record.syncIntervalMinutes,
+      };
+
+      try {
+        if (existingEtag) {
+          await this.client.updateEntity(entity, "Replace", { etag: existingEtag });
+        } else {
+          await this.client.createEntity(entity);
+        }
+        return true;
+      } catch (err) {
+        if (isPreconditionFailed(err) && attempt < MAX_RETRIES) {
+          continue; // race: re-read and re-check "newer" on the next loop iteration.
+        }
+        throw err;
+      }
+    }
+    return false;
+  }
+
+  async listByGroup(groupId: string): Promise<GroupLastKnownRecord[]> {
+    const records: GroupLastKnownRecord[] = [];
+    const entities = this.client.listEntities({
+      queryOptions: {
+        filter: odata`PartitionKey eq ${groupId} and RowKey ge ${MEMBER_PREFIX} and RowKey lt ${"member;"}`,
+      },
+    });
+    for await (const entity of entities) {
+      const userId = String(entity.rowKey).slice(MEMBER_PREFIX.length);
+      records.push(toRecord(userId, entity));
+    }
+    return records;
+  }
+}
