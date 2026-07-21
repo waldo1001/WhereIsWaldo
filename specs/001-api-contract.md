@@ -49,12 +49,13 @@ Every **error** response:
 |---|---|
 | Timestamps | ISO 8601 UTC with `Z`, e.g. `2026-07-19T09:05:12Z` (milliseconds optional) |
 | `familyId` | `fam_` + 20 chars `[A-Za-z0-9]` (server-generated) |
+| `groupId` | `grp_` + 20 chars `[A-Za-z0-9]` (server-generated) |
 | `requestId` (locate) | `lr_` + 20 chars `[A-Za-z0-9]` (server-generated) |
 | `userId` | The Firebase Auth `uid`, opaque string |
 | `deviceId` | Client-generated UUIDv4, stable per app install **and per signed-in user** — clients MUST generate a fresh `deviceId` when the signed-in user changes. `POST /devices` with a `deviceId` owned by a different user → `400 VALIDATION_FAILED`, `details.reason: "deviceIdInUse"`. |
 | `batchId`, `fixId`, `eventId` | Client-generated UUIDv4 |
 | `geofenceId` | Client-chosen slug `gf_[a-z0-9-]{1,30}`, unique within the family config |
-| Invite code | Server-generated, 8 chars of Crockford base32 (no I/L/O/U). Canonical form: uppercase, no hyphen. Clients MAY display/accept `XXXX-XXXX`; the server accepts case-insensitively and ignores hyphens. |
+| Invite code / group join code | Server-generated, 8 chars of Crockford base32 (no I/L/O/U). Canonical form: uppercase, no hyphen. Clients MAY display/accept `XXXX-XXXX`; the server accepts case-insensitively and ignores hyphens. Family invite codes are **single-use** (§3.3); group join codes are **multi-use** until the group ends or the code is rotated (§12.6–12.7). |
 | Coordinates | `lat` ∈ [−90, 90], `lon` ∈ [−180, 180], WGS 84 decimal degrees |
 | `accuracyM` | Horizontal accuracy radius in meters (68 % confidence), 0–10 000 |
 | `speedMps`, `bearingDeg`, `altitudeM` | m/s ≥ 0; degrees [0, 360); meters (optional fields) |
@@ -63,10 +64,13 @@ Every **error** response:
 
 ### 1.5 Auth context resolution (every request)
 
+A **profile** (the caller's `Users` row, 002 §2.2) and a **family** are distinct: a profile always has a `displayName`, and MAY have `familyId: null` / `role: null` — a family-less user (groups only, §12). Resolution:
+
 1. Verify the Firebase ID token (§2). Failure → 401 (§10).
-2. Load the caller's profile (`Users` table, 002 §2): `uid → { familyId, role }`.
-3. If no profile exists, the only permitted endpoints are `POST /families` and `POST /invites/accept`; everything else → `404 FAMILY_NOT_FOUND`.
-4. Role checks per endpoint table (§1.6). Role/pause state is read from storage on **every** request — this, not token revocation, is the enforcement boundary (§2.4).
+2. Load the caller's profile (`Users` table, 002 §2.2): `uid → { familyId | null, role | null, displayName }`.
+3. If **no profile exists**, the only permitted endpoints are the four profile-bootstrapping ones — `POST /families` (§3.1), `POST /invites/accept` (§3.4), `POST /groups` (§12.1), `POST /groups/join` (§12.6) — each of which creates the profile, taking `displayName` from the request. Everything else → `404 PROFILE_NOT_FOUND`.
+4. If the profile has **no family** (`familyId: null`), the family-scoped endpoints (§3.2–3.6, §5.2, §5.3, §6, §7) → `404 FAMILY_NOT_FOUND`. Device endpoints (§4), location reporting (§5.1), and group endpoints (§12) work without a family.
+5. Role checks per endpoint table (§1.6). Role/pause state is read from storage on **every** request — this, not token revocation, is the enforcement boundary (§2.4).
 
 ### 1.6 Endpoint index & required role
 
@@ -91,8 +95,18 @@ Every **error** response:
 | 7.2 | `PUT /api/v1/geofences` | parent |
 | 7.3 | `POST /api/v1/geofence-events` | member, own device (`X-Device-Id`) |
 | 7.4 | `GET /api/v1/geofence-events` | member |
+| 12.1 | `POST /api/v1/groups` | any authenticated user (profile created if absent) |
+| 12.2 | `GET /api/v1/groups` | user with a profile |
+| 12.3 | `GET /api/v1/groups/{groupId}` | group member |
+| 12.4 | `PATCH /api/v1/groups/{groupId}` | group owner |
+| 12.5 | `DELETE /api/v1/groups/{groupId}` | group owner |
+| 12.6 | `POST /api/v1/groups/join` | any authenticated user (profile created if absent) |
+| 12.7 | `POST /api/v1/groups/{groupId}/code/rotate` | group owner |
+| 12.8 | `POST /api/v1/groups/{groupId}/leave` | group member (not owner) |
+| 12.9 | `DELETE /api/v1/groups/{groupId}/members/{userId}` | group owner |
+| 12.10 | `GET /api/v1/groups/{groupId}/locations/latest` | group member |
 
-Role violation → `403 AUTH_FORBIDDEN`.
+In the "Caller" column, **member/parent** mean family roles (§3); **group member/owner** mean roles within the addressed group (§12). Family-role violation → `403 AUTH_FORBIDDEN`; non-membership of the addressed group → `404 GROUP_NOT_FOUND` (existence masked, §12); group-role violation by a member → `403 AUTH_FORBIDDEN`.
 
 ---
 
@@ -193,7 +207,7 @@ A parent MUST NOT demote themselves if they are the last parent (→ `400 VALIDA
 
 ### 3.6 Remove member — `DELETE /families/me/members/{userId}` (parent)
 
-`204` (empty body — one of the two body-less success responses, together with §7.1's `304`). Removes membership, profile link, and the member's device registrations. History blobs are untouched (retention policy governs them). The last parent cannot remove themselves (`400 VALIDATION_FAILED`, `details.reason: "lastParent"`).
+`204` (empty body — one of the body-less success responses, together with §7.1's `304` and the group `204`s of §12.5/§12.8/§12.9). Removes membership, profile link, and the member's device registrations. History blobs are untouched (retention policy governs them). The last parent cannot remove themselves (`400 VALIDATION_FAILED`, `details.reason: "lastParent"`).
 
 ---
 
@@ -224,11 +238,11 @@ Clients MUST call this on: first launch after sign-in, every FCM token refresh, 
   "syncIntervalMinutes": 15, "trackingEnabled": true, "pushInvalid": false }
 ```
 
-New registrations count against `features.limits.maxDevices` (→ `402 LIMIT_EXCEEDED`, `details.limit: "maxDevices"`); upserts of an existing `deviceId` never do. Push tokens (`pushToken`, `locationPushToken`) are write-only: they never appear in any response.
+New registrations count against `features.limits.maxDevices` — a **per-user** cap: the count is the registering user's own devices (→ `402 LIMIT_EXCEEDED`, `details.limit: "maxDevices"`); upserts of an existing `deviceId` never do. Push tokens (`pushToken`, `locationPushToken`) are write-only: they never appear in any response. Devices are stored per-owner (002 §2.4) — registration does not require a family.
 
 ### 4.2 List family devices — `GET /devices`
 
-Open family: all members see all devices and their settings (only parents can change them).
+Open family: all members see all devices and their settings (only parents can change them). A **family-less caller** gets their **own devices only** (same response shape; `ownerDisplayName` = their profile `displayName`).
 
 ```json
 // 200 → data
@@ -246,7 +260,8 @@ Open family: all members see all devices and their settings (only parents can ch
 ```
 
 - **Parent:** may set any field. Setting `trackingEnabled: false` is the "pause" button.
-- **Owner (non-parent):** may set **only** `pushToken`; any other field → `403 AUTH_FORBIDDEN`.
+- **Owner (non-parent, in a family):** may set **only** `pushToken`; any other field → `403 AUTH_FORBIDDEN`.
+- **Family-less owner:** may set **any field** of their own device — with no family there is no parent, so the user is their own admin. (Pause stays device-global: a paused device reports to no family and no group — 005 §3.)
 - On any change to `syncIntervalMinutes` / `trackingEnabled`, the backend sends a `SETTINGS_CHANGED` push (§8.3) to that device so it can apply immediately. The push is a best-effort accelerator — the guaranteed pickup paths are defined in §5.1 (piggyback for active devices, settings poll for paused ones).
 
 `200` → data: updated device object (§4.1 shape).
@@ -287,11 +302,13 @@ Rules:
 - **Last-known:** updated only if the batch's newest `recordedAt` is newer than the stored one.
 - **Paused device:** `403 TRACKING_PAUSED`, with current settings in `error.details.deviceSettings`. While paused the device MUST stop collecting fixes, stop its periodic worker, and unregister its platform geofences (transitions detected while paused are dropped); fixes recorded **before** the pause MAY still be uploaded after resume. **Resume is pull-based:** while paused the device MUST re-check its settings via `GET /devices` on every app foreground and at least every 6 hours; the `SETTINGS_CHANGED` push (§8.3) is a best-effort accelerator, never the resume mechanism.
 - **Fix sources:** on a geofence transition the device SHOULD also record one fix with `source: "geofence"` (so the map has a position matching the event); `source: "manual"` is a user-initiated refresh of the device's own position from the app UI.
-- **Piggybacked sync:** every response carries current `deviceSettings` and the geofence config `geofenceEtag`; if the ETag differs from the device's cached one, the device SHOULD `GET /geofences` (§7.1). This bounds config staleness to one sync interval with zero extra polling.
+- **Piggybacked sync:** every response carries current `deviceSettings` and the geofence config `geofenceEtag`; if the ETag differs from the device's cached one, the device SHOULD `GET /geofences` (§7.1). This bounds config staleness to one sync interval with zero extra polling. For a **family-less caller**, `geofenceEtag` is `"0"` (geofences are family-scoped; there is no config to sync).
+- **Group fan-out (side effect):** after last-known is updated, the batch's newest fix is also upserted (same only-newer rule, position-only fields — 002 §2.12) into each of the reporter's **`active`** groups (state per 005 §2.2) — at most `features.limits.maxActiveGroups` extra writes. Paused devices never reach this point (`TRACKING_PAUSED` above).
+- **History gate:** the per-fix history append happens **only when the caller has a family**. A family-less user's fixes update last-known and group positions only — group participation never creates durable location history (005 §3).
 
 ### 5.2 Live map — `GET /locations/latest`
 
-One call returns the whole family (one partition scan, 002 §2).
+One call returns the whole family (roster scan + per-member `Devices`/`LastKnown` partition scans, parallelized — 002 §2.4–2.5). Requires a family (§1.5.4) — a family-less caller's live view is the group map (§12.10).
 
 ```json
 // 200 → data
@@ -527,6 +544,10 @@ FCM responses indicating an invalid/unregistered token (`UNREGISTERED`, `INVALID
 
 FCM v1 send requires a Google service account (`FCM_SERVICE_ACCOUNT_JSON` app setting; OAuth2 `https://www.googleapis.com/auth/firebase.messaging`). This is the only stored credential in the system (000 §O6).
 
+### 8.7 Reserved group message types (not sent in v1)
+
+The `data.type` values `GROUP_MEMBER_JOINED` and `GROUP_ENDING_SOON` are **reserved** for future group notifications (005 §5, 000 §O14). No v1 backend sends them; clients MUST ignore unknown `data.type` values (they already must, §1.1 forward compatibility).
+
 ---
 
 ## 9. Entitlements & `features`
@@ -536,15 +557,19 @@ Shape (present in every success envelope):
 ```json
 { "subscriptionStatus": "free",
   "limits": { "maxDevices": 10, "maxGeofences": 20, "historyDays": 90,
-              "minSyncIntervalMinutes": 5, "locateRequestsPerDay": 100 },
-  "flags": { "pushToLocate": true, "geofencing": true, "historyReplay": true } }
+              "minSyncIntervalMinutes": 5, "locateRequestsPerDay": 100,
+              "maxActiveGroups": 5, "maxGroupMembers": 50,
+              "maxGroupDurationDays": 30, "groupGraceDays": 7 },
+  "flags": { "pushToLocate": true, "geofencing": true, "historyReplay": true, "groups": true } }
 ```
 
 - Derived **server-side only** from `PLAN_MATRIX[subscriptionStatus]` (a constant in `backend/src/domain/plan.ts`). Clients never send entitlement data.
 - `"active"` currently mirrors `"free"` — it is a reserved placeholder; changing plan benefits later = editing the matrix, nothing else.
-- **Every** limit enforcement point (device cap §4.1, geofence cap §7.2, history window §5.3/§7.4, locate quota §6.1, interval floor §1.4/§4.3) reads this object — never a literal.
-- Plan-cap violations (`maxDevices`, `maxGeofences`, `locateRequestsPerDay`, `minSyncIntervalMinutes`) use HTTP **402** `LIMIT_EXCEEDED` with `details.limit: "<limits key>"` — the single future upsell hook. The history window is the deliberate exception: `400 VALIDATION_FAILED`, `details.reason: "beyondRetention"` (§5.3/§7.4), because it bounds a query, not a plan action.
-- **Usage increment rules** (stored per family/day, 002 §2.9): `apiCalls` +1 per authenticated request (any endpoint, once auth succeeds); `locationBatches` +1 per accepted non-duplicate batch; `fixes` + accepted-fix count; `locateRequests` +1 per `201`-created request only (coalesced `200`s and rejections excluded — this metric feeds the §6.1 quota); `geofenceEvents` + accepted-event count.
+- The `features` envelope always reflects the **caller**: their family's entitlement when they have one, else an implicit `"free"` (family-less users have no `Entitlements` row — 002 §2.6).
+- **Group capacity is governed by the owner's plan:** `maxGroupMembers` is resolved from the group **owner's** entitlement at join time (§12.6) — the future "owner upgrades → bigger group" story without snapshotting limits into storage. The caller-scoped group limits (`maxActiveGroups`, `maxGroupDurationDays`) enforce against the caller's own `features`.
+- **Every** limit enforcement point (device cap §4.1, geofence cap §7.2, history window §5.3/§7.4, locate quota §6.1, interval floor §1.4/§4.3, group caps §12.1/§12.4/§12.6) reads this object — never a literal.
+- Plan-cap violations (`maxDevices`, `maxGeofences`, `locateRequestsPerDay`, `minSyncIntervalMinutes`, `maxActiveGroups`, `maxGroupDurationDays`) use HTTP **402** `LIMIT_EXCEEDED` with `details.limit: "<limits key>"` — the single future upsell hook. Two deliberate exceptions: the history window is `400 VALIDATION_FAILED`, `details.reason: "beyondRetention"` (§5.3/§7.4), because it bounds a query, not a plan action; and group capacity is `409 GROUP_FULL` (§12.6), because the joiner hitting it isn't the upsell target — the owner's plan governs capacity.
+- **Usage increment rules** (stored per family/day — per user/day for family-less callers, 002 §2.9): `apiCalls` +1 per authenticated request (any endpoint, once auth succeeds); `locationBatches` +1 per accepted non-duplicate batch; `fixes` + accepted-fix count; `locateRequests` +1 per `201`-created request only (coalesced `200`s and rejections excluded — this metric feeds the §6.1 quota); `geofenceEvents` + accepted-event count.
 
 ---
 
@@ -557,19 +582,25 @@ Shape (present in every success envelope):
 | 401 | `AUTH_TOKEN_EXPIRED` | `exp` in the past (client: refresh & retry once) | — |
 | 403 | `AUTH_FORBIDDEN` | Valid user, insufficient role / not requester / wrong device | — |
 | 403 | `TRACKING_PAUSED` | Paused device reports (§5.1, §7.3) or locate target paused (§6.1) | `{ "deviceSettings": { … } }` on §5.1/§7.3, so a surviving call re-syncs settings |
-| 404 | `FAMILY_NOT_FOUND` | Caller has no family (endpoints outside §1.5.3 allowance) | — |
-| 404 | `MEMBER_NOT_FOUND` | `{userId}` not in caller's family | — |
+| 404 | `PROFILE_NOT_FOUND` | Caller has no profile (endpoints outside the §1.5.3 bootstrap allowance) | — |
+| 404 | `FAMILY_NOT_FOUND` | Caller has a profile but no family (family-scoped endpoints, §1.5.4) | — |
+| 404 | `MEMBER_NOT_FOUND` | `{userId}` not in caller's family (§3.5–3.6) / not in the addressed group (§12.9) | — |
 | 404 | `DEVICE_NOT_FOUND` | Unknown `deviceId` / `X-Device-Id` not owned by caller | — |
 | 404 | `LOCATE_REQUEST_NOT_FOUND` | Unknown `requestId` (or not in caller's family) | — |
+| 404 | `GROUP_NOT_FOUND` | Unknown `groupId`, caller not a member of it (masked, §12), or group already swept | — |
 | 409 | `FAMILY_ALREADY_MEMBER` | Create/join while already in a family | — |
 | 409 | `GEOFENCE_VERSION_CONFLICT` | `If-Match` mismatch on §7.2 | `{ "currentEtag": "…" }` |
+| 409 | `GROUP_ALREADY_MEMBER` | Join a group the caller is already in (§12.6) | — |
+| 409 | `GROUP_FULL` | Roster at the owner-plan `maxGroupMembers` cap (§12.6, §9) | `{ "max": 50 }` |
 | 410 | `INVITE_EXPIRED` | Code past `expiresAt` | — |
 | 410 | `LOCATE_REQUEST_EXPIRED` | Fulfill after expiry (§6.3 — fix still stored) | — |
+| 410 | `GROUP_EXPIRED` | Operation on a group past its usable life for that path (matrix in 005 §2.3, §12) | — |
 | 400 | `INVITE_INVALID` | Unknown invite code | — |
 | 400 | `INVITE_ALREADY_USED` | Single-use code already consumed | — |
-| 400 | `VALIDATION_FAILED` | Any request-schema violation | `{ "fields": ["fixes[3].recordedAt"], "reason?": "lastParent" \| "beyondRetention" \| "deviceIdInUse" \| … }` |
+| 400 | `GROUP_CODE_INVALID` | Unknown or rotated group join code (§12.6) | — |
+| 400 | `VALIDATION_FAILED` | Any request-schema violation | `{ "fields": ["fixes[3].recordedAt"], "reason?": "lastParent" \| "beyondRetention" \| "deviceIdInUse" \| "ownerCannotLeave" \| … }` |
 | 400 | `LOCATION_BATCH_TOO_LARGE` | > 100 fixes (§5.1) | `{ "max": 100 }` |
-| 402 | `LIMIT_EXCEEDED` | Plan limit hit | `{ "limit": "maxDevices" \| "maxGeofences" \| "locateRequestsPerDay" \| "minSyncIntervalMinutes" }` |
+| 402 | `LIMIT_EXCEEDED` | Plan limit hit | `{ "limit": "maxDevices" \| "maxGeofences" \| "locateRequestsPerDay" \| "minSyncIntervalMinutes" \| "maxActiveGroups" \| "maxGroupDurationDays" }` |
 | 429 | `RATE_LIMITED` | Per-user throttle (reserved; not enforced in v1) | `{ "retryAfterSeconds": 30 }` |
 | 500 | `INTERNAL_ERROR` | Unhandled failure; never leaks internals | — |
 | 503 | `PUSH_DELIVERY_FAILED` | Reserved. The locate flow reports push failure via `status: "pushFailed"` (§6.2), never via this error; geofence fan-out failures are silent best-effort. Kept for future endpoints where a synchronous push IS the operation. | — |
@@ -580,7 +611,7 @@ Envelope format: §1.3. `message` is for logs/debugging only; clients map `code`
 
 ## 11. Test checklist (conforming backend)
 
-- Envelope: every success includes `features`; every error matches §1.3 with a `requestId`; §3.6 returns bare `204`.
+- Envelope: every success includes `features`; every error matches §1.3 with a `requestId`; §3.6/§12.5/§12.8/§12.9 return bare `204`.
 - Auth: each 401 variant; role matrix per §1.6; no-family allowance (§1.5.3); pause enforcement on §5.1/§7.3 (with `deviceSettings` in `details`) but **not** §6.3.
 - Family: create → creator parent + entitlements `free`; double-create/join → `FAMILY_ALREADY_MEMBER`; invite single-use under concurrency; expiry; last-parent protection.
 - Devices: defaults on first registration; upsert preserves parent-managed settings; device cap counts only new registrations; owner-PATCH restricted to `pushToken`.
@@ -590,7 +621,123 @@ Envelope format: §1.3. `message` is for logs/debugging only; clients map `code`
 - Locate: instant `lastKnown`; ordered target resolution (§6.1) incl. no-devices → 404 and all-paused → 403; coalescing (excluded from quota); quota; poll authorization; lazy expiry; fulfill after expiry stores fix but returns 410; `pushFailed` path marks `pushInvalid`.
 - Geofences: ETag 304/409 flows; `"0"` sentinel create; validation caps; `notifyOnEnter`/`notifyOnExit` fan-out filtering (history always stored); unknown-`geofenceId` event acceptance without fan-out; event idempotency.
 - Features: limits read from `PLAN_MATRIX` only (mutation testing should kill hardcoded-literal mutants).
+- Profiles: the four §1.5.3 bootstrap endpoints create a profile; `PROFILE_NOT_FOUND` everywhere else without one; family-less caller on family-scoped endpoints → `FAMILY_NOT_FOUND`; family-less §4.2 own-devices response and §4.3 full-field own-device PATCH.
+- Groups (§12; full matrix in 005 §7): lifecycle × policy enforcement; owned+joined `maxActiveGroups` count; owner-plan `GROUP_FULL`; join/rotate/kick/leave code paths; `GROUP_NOT_FOUND` masking for non-members; §5.1 fan-out (active groups only, position-only fields, only-newer) and the family-less history gate; sweeper per-policy deletion + idempotent re-run.
+
+---
+
+## 12. Groups (temporary)
+
+Product model, lifecycle, and privacy guarantees are normative in [005](005-temporary-groups.md); this section owns the wire shapes. Group state (`active` | `ended` | `archived`) is derived per 005 §2.2 and echoed in responses — `expired` is never serialized: expired groups are filtered from §12.2 and answer `410 GROUP_EXPIRED` (post-sweep: `404 GROUP_NOT_FOUND`) elsewhere, per the 005 §2.3 matrix. On every `{groupId}` route, a caller who is not a member receives `404 GROUP_NOT_FOUND`, indistinguishable from a nonexistent group.
+
+### 12.1 Create group — `POST /groups`
+
+Any authenticated user. Bootstraps a profile if the caller has none (§1.5.3) — `displayName` is REQUIRED then, optional otherwise (defaults to the profile's). The caller becomes `owner`. The caller's non-expired memberships (owned + joined) MUST be `< features.limits.maxActiveGroups` (→ `402 LIMIT_EXCEEDED`, `details.limit: "maxActiveGroups"`).
+
+```json
+// request
+{ "name": "Festival crew", "endsAt": "2026-08-02T22:00:00Z",
+  "expiryPolicy": "delete", "displayName": "Eric" }
+// name 1–50 chars; expiryPolicy ∈ {delete, grace, archive} (005 §2.1);
+// endsAt ≥ now + 1h (else 400 VALIDATION_FAILED) and ≤ now + limits.maxGroupDurationDays
+//   (else 402 LIMIT_EXCEEDED, details.limit: "maxGroupDurationDays"); displayName 1–30 chars
+
+// 201 → data
+{ "groupId": "grp_9J2Kq7Lm3NpR5sTvWxYz", "name": "Festival crew",
+  "endsAt": "2026-08-02T22:00:00Z", "expiryPolicy": "delete", "state": "active",
+  "role": "owner", "memberCount": 1, "code": "7F3K9QRZ",
+  "createdAt": "2026-07-21T10:00:00Z" }
+```
+
+### 12.2 List my groups — `GET /groups`
+
+Caller needs a profile. Expired groups are filtered out; `ended`/`archived` ones appear with their state.
+
+```json
+// 200 → data
+{ "groups": [
+    { "groupId": "grp_…", "name": "Festival crew", "endsAt": "…", "expiryPolicy": "delete",
+      "state": "active", "role": "owner", "memberCount": 7, "code": "7F3K9QRZ" } ] }
+```
+
+`code` is present for **every** member (any member may recruit — 005 §1); it is `null` once the group is past `endsAt` (the code row is deleted, 005 §2.3).
+
+### 12.3 Get group — `GET /groups/{groupId}` (group member)
+
+The §12.2 item plus the roster. During `grace` (`state: "ended"`), non-owner members receive the item with `"members": null` (roster hidden, 005 §2.3); the owner and `archived` groups get the full roster.
+
+```json
+// 200 → data
+{ "groupId": "grp_…", "name": "Festival crew", "endsAt": "…", "expiryPolicy": "delete",
+  "state": "active", "role": "member", "memberCount": 7, "code": "7F3K9QRZ",
+  "createdAt": "…",
+  "members": [
+    { "userId": "u1", "displayName": "Eric", "role": "owner",  "joinedAt": "…" },
+    { "userId": "u9", "displayName": "Noor", "role": "member", "joinedAt": "…" } ] }
+```
+
+### 12.4 Update group — `PATCH /groups/{groupId}` (owner)
+
+```json
+// request — at least one field
+{ "name": "Festival crew 2026", "endsAt": "2026-08-03T22:00:00Z" }
+```
+
+- `endsAt` MUST be `> now` and `≤ now + limits.maxGroupDurationDays` (→ `402`, `details.limit: "maxGroupDurationDays"`); as a convenience, `endsAt ≤ now + 5 min` means "end the group now". Extending a `grace`-state (`ended`) group **reactivates** it (005 §2.2). Not allowed on `archived` (→ `410 GROUP_EXPIRED`).
+- `200` → data: the updated §12.2 item shape.
+
+### 12.5 Delete group — `DELETE /groups/{groupId}` (owner)
+
+`204` (empty body). Immediate, synchronous hard delete of everything (members, code, locations, indexes — 005 §2.4), in any state, regardless of policy.
+
+### 12.6 Join group — `POST /groups/join`
+
+Any authenticated user. Bootstraps a profile if absent (§1.5.3 — `displayName` REQUIRED then; otherwise optional, defaulting to the profile's). The `displayName` in the request becomes the caller's **per-group** display name (005 §1).
+
+```json
+// request
+{ "code": "7f3k-9qrz", "displayName": "Noor" }
+
+// 200 → data
+{ "groupId": "grp_…", "name": "Festival crew", "endsAt": "…", "expiryPolicy": "delete",
+  "state": "active", "role": "member", "memberCount": 8, "code": "7F3K9QRZ" }
+```
+
+Errors: unknown/rotated code → `400 GROUP_CODE_INVALID`; group past `endsAt` → `410 GROUP_EXPIRED`; already a member → `409 GROUP_ALREADY_MEMBER`; roster at the **owner's** plan `maxGroupMembers` (§9) → `409 GROUP_FULL`, `details: { "max": 50 }`. The membership insert is conditional; the capacity check is best-effort under concurrency (same accepted class as the §4.1 device cap).
+
+### 12.7 Rotate join code — `POST /groups/{groupId}/code/rotate` (owner)
+
+The old code stops working instantly; there is always exactly one live code per active group.
+
+```json
+// 200 → data
+{ "code": "9XPT4WKA", "rotatedAt": "2026-07-21T10:05:00Z" }
+```
+
+### 12.8 Leave group — `POST /groups/{groupId}/leave` (group member)
+
+`204` (empty body). Removes the caller's membership and their group position immediately. Works in any non-expired state (clearing an `archived` memento is allowed). The **owner cannot leave** (no ownership transfer in v1, 000 §O15) → `400 VALIDATION_FAILED`, `details.reason: "ownerCannotLeave"` — the owner ends (§12.4) or deletes (§12.5) instead.
+
+### 12.9 Kick member — `DELETE /groups/{groupId}/members/{userId}` (owner)
+
+`204` (empty body). Same removals as §12.8, applied to `{userId}`; their position disappears from the group map immediately. Unknown/non-member `{userId}` → `404 MEMBER_NOT_FOUND`. The owner cannot kick themselves → `400 VALIDATION_FAILED`, `details.reason: "ownerCannotLeave"`.
+
+### 12.10 Group live map — `GET /groups/{groupId}/locations/latest` (group member)
+
+Only on `active` groups — `ended`/`archived`/expired → `410 GROUP_EXPIRED` (005 §2.3). One partition scan (002 §2.12). Every member appears (roster parity with §5.2); `location: null` = no position yet. **Position-only** (005 §3): no `deviceId`, `deviceName`, `batteryPct`, `source`, altitude/speed/bearing.
+
+```json
+// 200 → data
+{ "members": [
+    { "userId": "u1", "displayName": "Eric", "role": "owner",
+      "location": { "lat": 51.0543, "lon": 3.7174, "accuracyM": 15.0,
+                    "recordedAt": "2026-07-21T09:58:00Z", "receivedAt": "2026-07-21T09:58:02Z",
+                    "isStale": false } },
+    { "userId": "u9", "displayName": "Noor", "role": "member", "location": null } ] }
+```
+
+`isStale` uses the §5.2 formula, computed from the `syncIntervalMinutes` frozen into the group position at write time (002 §2.12) — it reflects the reporting device's interval as of its last fix.
 
 ## Open questions
 
-None — platform delivery risks are tracked in 000 §Open Items (O1, O2).
+None — platform delivery risks are tracked in 000 §Open Items (O1, O2); deferred group matters in 000 §Open Items (O13–O16).

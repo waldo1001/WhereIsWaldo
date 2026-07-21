@@ -11,13 +11,15 @@ A private, family-only location tracking app ("Find My Family" style) for **Andr
 3. **On-demand live location ("push-to-locate")** — any member requests another member's current position; the backend pushes a high-priority wake to the target device, which takes a brief high-accuracy foreground GPS fix and reports back immediately. This **always overrules the configured interval**. The requester sees last-known instantly while the fresh fix happens in parallel (001 §6).
 4. **Historical tracking** — every location report and geofence event is stored and replayable on a map (trail + timeline) via paginated history APIs (001 §5.3, §7.4).
 5. **Geofencing with notifications** — predefined places (home, school, work, …). Geofences are evaluated **natively on-device** (platform geofencing APIs — battery-efficient). On enter/exit the device reports the event; the backend stores it as history and pushes a notification to all family devices except the reporting device (001 §7.3) — e.g. "Noor arrived at Home". Geofence definitions are managed centrally (JSON config, synced to devices with ETags — no app update needed to change them) (001 §7).
+6. **Temporary groups** — a temporary community "find me" (005): any user creates a group with an end date (festival, holiday), shares a multi-use join code, and all members see each other's **live position only** (no history, no battery/device detail) until the group ends; expiry behavior is a per-group choice (delete / grace / archive) and expired location data is **physically deleted** (001 §12, 002 §2.10–2.13).
 
 ## Roles & family model
 
 - **Parents** (one or more) = admins: create the family, invite parents or kids (invite code; email delivery of invites is an open item), manage geofences, manage per-device settings, and can **enable/disable tracking per device** without removing the member (a "pause" button).
 - **Members** (kids): see everyone's location; cannot change settings.
-- **Devices:** each user can have multiple devices (phone, tablet). Each device has its own client-generated ID, its own sync interval, and its own tracking on/off flag.
+- **Devices:** each user can have multiple devices (phone, tablet). Each device has its own client-generated ID, its own sync interval, and its own tracking on/off flag. Devices belong to the **user** (002 §2.4) — a family is not required to register one.
 - One family per user (v1). Removing a member deletes their membership, not their historical data (retention handles that).
+- **Groups (temporary, 005)** are independent of families: membership is per-user (owner + members), a user has at most one family plus up to `maxActiveGroups` groups — or **no family at all** (family-less users are first-class: profile without family, 001 §1.5). Each membership carries its own per-group `displayName`. Family features (family map, history, geofences, locate, pause administration) require a family; groups only require an account.
 
 ## Architecture (fixed — changes require a spec PR and explicit approval)
 
@@ -46,13 +48,17 @@ A private, family-only location tracking app ("Find My Family" style) for **Andr
 | D8 | `LIMIT_EXCEEDED` is HTTP **402** | Single upsell hook for the future subscription tier |
 | D9 | Firebase token verification without Admin SDK (jose + JWKS) | No Google credential needed for auth; revocation gap accepted — see 001 §2.4 |
 | D10 | Phone-number-only sign-in via Firebase Phone Auth, replacing email/password (006) | The phone is the natural identity (WhatsApp model); no passwords for kids to manage; server contract untouched (provider-invisible tokens); Blaze + per-SMS billing accepted at cents/month, guarded by region allowlist + budget alert; pre-launch, so a one-time account reset instead of migration |
+| D11 | Groups independent of families; profile decoupled from family (`familyId` nullable), `Devices`/`LastKnown` re-keyed per-user (005, 001 §1.5, 002 §2.2/2.4/2.5) | A festival crew isn't a family; family-less users must be first-class or every invitee needs a fake family. Re-keying devices per owner makes ownership structural and family optional — free to do pre-launch (no data to migrate), poisonous to retrofit later. Pseudo-family alternative rejected: it corrupts `Entitlements` and `FAMILY_ALREADY_MEMBER` semantics |
+| D12 | Group live positions = fan-out-on-write to a per-group partition (`GroupLastKnown`, 002 §2.12) | Map reads dominate ingest (polling foreground map vs ≥5-min batches), so pay ≤`maxActiveGroups` extra guarded writes per batch to keep every read one partition scan (002's standing rule). Privacy bonus: group location data lives only in the group's own partition — deletion is a self-contained partition wipe |
+| D13 | Group lifecycle = derived state (`f(now, endsAt, policy)`) + lazy read enforcement + a daily sweeper for physical deletion (005 §2, 002 §4.1) | No stored state machine → no transition writes, no drift; matches the existing lazy-expiry idiom (invites, locate requests). Table Storage has no row TTL and "temporary" must mean *actually deleted*, so the sweeper — the project's first timer function — does the physical purge, found via a date-bucket index, never a full scan |
+| D14 | Groups are live-only and position-only: no group history/geofences/locate, no battery/device detail on the group map (005 §3/§5) | Group members may be strangers to each other: durable movement records, on-demand device waking, and battery/device detail cross the trust line families have and groups don't — and every byte not stored is a byte the deletion promise doesn't have to cover |
 
 ## Subscription-ready (NOT implemented)
 
 The app is free and family-only. The architecture must make a future subscription trivial:
 
 - Every family has an entitlements record: `subscriptionStatus: "free" | "active"`, default `"free"` (002 §2).
-- Every **success response with a body** includes a `features` object (limits + flags) derived server-side from `PLAN_MATRIX[subscriptionStatus]` — clients adapt without code changes (001 §9; body-less exceptions: the `204` of 001 §3.6 and the `304` of 001 §7.1).
+- Every **success response with a body** includes a `features` object (limits + flags) derived server-side from `PLAN_MATRIX[subscriptionStatus]` — clients adapt without code changes (001 §9; body-less exceptions: the `204`s of 001 §3.6/§12.5/§12.8/§12.9 and the `304` of 001 §7.1).
 - Every limit enforcement point reads the features object, never a literal.
 - Backend logs usage per family/day (002 §2, `Usage` table).
 - **No StoreKit / Play Billing code** until a numbered subscriptions spec exists.
@@ -77,6 +83,10 @@ See [`specs/README.md`](README.md). Summary: spec-driven (no code before spec), 
 | O10 | **Trademark** | "Where's Waldo/Wally" is the book franchise's mark. Fine private; revisit before public store branding. |
 | O11 | **Phone-number surfacing** | The ID token's `phone_number` claim is deliberately unused in v1 (006 §2). Showing numbers on rosters later is additive (`VerifiedToken` gains an optional field) but is a children's-PII decision — bundle with O7. |
 | O12 | **Number change / account linking** | v1: a changed phone number = a new account, re-invite to family/groups (006 §1). If that ever hurts, an account-linking flow (verify old + new number, remap or re-key) needs its own numbered spec. |
+| O13 | **Per-group sharing pause** | v1: `trackingEnabled` is device-global (a paused device reports nowhere); "stop sharing with this group" = leave and rejoin later (005 §3). A per-(device, group) pause would need its own settings rows + piggyback changes — spec it only if leaving proves too blunt. |
+| O14 | **Group push notifications** | `GROUP_MEMBER_JOINED` / `GROUP_ENDING_SOON` `data.type` values are reserved (001 §8.7), not sent. The sweeper's daily run is the natural `GROUP_ENDING_SOON` emitter when this lands; FCM client handling is still stubbed on both platforms anyway. |
+| O15 | **Group ownership transfer** | v1: none — the owner cannot leave (`ownerCannotLeave`, 001 §12.8); they end or delete the group instead. Transfer (pick a successor, owner leaves) is additive if wanted. |
+| O16 | **HTTPS universal join links** | v1 ships the in-app deep link (`waldo://group-join?code=…`, 003/004). Web-hosted `https://` links that work without the app installed belong to the future web spec (App Links / Universal Links + a landing page). |
 
 ## Test checklist
 

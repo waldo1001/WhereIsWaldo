@@ -42,9 +42,9 @@ mobile/android/
         │   ├── push/               PushTokenProvider, StubPushTokenProvider
         │   ├── device/             DeviceIdStore/Provider, DeviceInfoProvider, DeviceRegistrar
         │   ├── network/            DTOs (dto/), ApiError, ApiErrorMapper, ApiResult, ports/ (FamilyApi,
-        │   │                       DevicesApi, LocationsApi, LocateApi, GeofenceApi), WaldoApiService
-        │   │                       (Retrofit interface), WaldoApiClient (implements the ports),
-        │   │                       AuthInterceptor, RetrofitFactory, FeaturesMapper
+        │   │                       DevicesApi, LocationsApi, LocateApi, GeofenceApi, GroupsApi),
+        │   │                       WaldoApiService (Retrofit interface), WaldoApiClient (implements
+        │   │                       the ports), AuthInterceptor, RetrofitFactory, FeaturesMapper
         │   ├── queue/              QueuedFix, FixBatch, FixQueueStore, InMemoryFixQueueStore,
         │   │                       LocationSyncCoordinator, worker/ (LocationSyncWorker, Scheduler — scaffold)
         │   ├── pushmessages/        PushMessageType (FCM `data.type` discriminator + parser)
@@ -119,7 +119,7 @@ Elevation (dp): `level0`=0, `level1`=1, `level2`=3, `level3`=6.
 
 ## 5. Networking layer — endpoint → client mapping
 
-Base URL is configured as `{scheme}://{host}/api/`; every Retrofit method path is `v1/...`, together forming the `/api/v1/...` routes of 001 §1.1. `WaldoApiService` is the raw Retrofit interface; `WaldoApiClient` implements five narrow port interfaces (one per 001 section) and is the only thing the rest of the app depends on — mirrors the backend's ports/adapters split so a future fake for ViewModel tests is trivial.
+Base URL is configured as `{scheme}://{host}/api/`; every Retrofit method path is `v1/...`, together forming the `/api/v1/...` routes of 001 §1.1. `WaldoApiService` is the raw Retrofit interface; `WaldoApiClient` implements six narrow port interfaces (one per 001 endpoint group) and is the only thing the rest of the app depends on — mirrors the backend's ports/adapters split so a future fake for ViewModel tests is trivial.
 
 | 001 § | Method & path | Port interface · method | Request DTO | Response DTO |
 |---|---|---|---|---|
@@ -142,6 +142,16 @@ Base URL is configured as `{scheme}://{host}/api/`; every Retrofit method path i
 | 7.2 | `PUT v1/geofences` (+`If-Match`) | `GeofenceApi.replaceGeofences` | `ReplaceGeofencesRequestDto` | `ETagged<GeofenceConfigResponseDto>` |
 | 7.3 | `POST v1/geofence-events` (+`X-Device-Id`) | `GeofenceApi.reportGeofenceEvents` | `ReportGeofenceEventsRequestDto` | `GeofenceEventsResponseDto` |
 | 7.4 | `GET v1/geofence-events` | `GeofenceApi.getGeofenceEventHistory` | query params | `GeofenceEventHistoryResponseDto` |
+| 12.1 | `POST v1/groups` | `GroupsApi.createGroup` | `CreateGroupRequestDto` | `GroupDto` |
+| 12.2 | `GET v1/groups` | `GroupsApi.listGroups` | — | `ListGroupsResponseDto` |
+| 12.3 | `GET v1/groups/{groupId}` | `GroupsApi.getGroup` | — | `GroupDetailDto` |
+| 12.4 | `PATCH v1/groups/{groupId}` | `GroupsApi.updateGroup` | `UpdateGroupRequestDto` | `GroupDto` |
+| 12.5 | `DELETE v1/groups/{groupId}` | `GroupsApi.deleteGroup` | — | `Unit` (bare 204, as §3.6) |
+| 12.6 | `POST v1/groups/join` | `GroupsApi.joinGroup` | `JoinGroupRequestDto` | `GroupDto` |
+| 12.7 | `POST v1/groups/{groupId}/code/rotate` | `GroupsApi.rotateGroupCode` | — | `RotateGroupCodeResponseDto` |
+| 12.8 | `POST v1/groups/{groupId}/leave` | `GroupsApi.leaveGroup` | — | `Unit` (bare 204) |
+| 12.9 | `DELETE v1/groups/{groupId}/members/{userId}` | `GroupsApi.removeGroupMember` | — | `Unit` (bare 204) |
+| 12.10 | `GET v1/groups/{groupId}/locations/latest` | `GroupsApi.getGroupLatestLocations` | — | `GroupLatestLocationsResponseDto` |
 
 DTOs are `kotlinx.serialization` `@Serializable data class`es whose field names match 001's JSON verbatim (no `@SerialName` needed anywhere). Fields the spec marks optional are nullable with `= null` defaults; fields the spec marks required are non-null. Where 001 documents a field as `null` in a specific state (e.g. 5.2's "no report yet" devices, or history points before any fix — see 5.2/5.3), the DTO makes the whole neighborhood of related fields (`accuracyM`, `batteryPct`, `source`, `receivedAt` alongside the explicitly-called-out `lat/lon/recordedAt/isStale`) nullable too, defensively, per 001 §1.1's forward-compatibility rule ("clients MUST ignore unknown response fields") extended to "clients MUST NOT crash on an absent-but-plausible field".
 
@@ -153,7 +163,7 @@ DTOs are `kotlinx.serialization` `@Serializable data class`es whose field names 
 
 One subtype per 001 §10 catalog code, plus two client-local variants: `NetworkFailure(cause: Throwable)` (no HTTP response at all — timeout, DNS, offline) and `Unknown(code, message, details, requestId)` (a future/unrecognized code — defensive, should never trigger against a spec-conformant backend). Code-specific `details` are typed where 001 defines a shape: `TrackingPaused.deviceSettings`, `GeofenceVersionConflict.currentEtag`, `ValidationFailed.fields`/`.reason`, `LocationBatchTooLarge.max`, `LimitExceeded.limit`, `RateLimited.retryAfterSeconds`.
 
-`ApiErrorMapper.fromCode(code, message, details, requestId): ApiError` is a pure function (`when (code) { "AUTH_MISSING_TOKEN" -> ...; ...; else -> Unknown(...) }`) covering all 21 catalog codes — the test checklist requires a test that asserts every single code maps to its named subtype (not `Unknown`).
+`ApiErrorMapper.fromCode(code, message, details, requestId): ApiError` is a pure function (`when (code) { "AUTH_MISSING_TOKEN" -> ...; ...; else -> Unknown(...) }`) covering all 27 catalog codes — the test checklist requires a test that asserts every single code maps to its named subtype (not `Unknown`). The six group-era codes (`PROFILE_NOT_FOUND`, `GROUP_NOT_FOUND`, `GROUP_EXPIRED`, `GROUP_CODE_INVALID`, `GROUP_ALREADY_MEMBER`, `GROUP_FULL` — with `GroupFull.max` typed) get user messages in `ApiErrorUserMessage.kt` like every other code.
 
 ### 6.2 `ApiResult<T>`
 
@@ -164,7 +174,7 @@ sealed class ApiResult<out T> {
 }
 ```
 
-`features` is nullable **only** to represent 001's two documented body-less successes: §3.6's bare `204` and §7.1's bare `304` (000 overview, "Subscription-ready" bullet). Every other endpoint always carries `Features`.
+`features` is nullable **only** to represent 001's documented body-less successes: the bare `204`s (§3.6, §12.5, §12.8, §12.9) and §7.1's bare `304` (000 overview, "Subscription-ready" bullet). Every other endpoint always carries `Features`.
 
 ### 6.3 Envelope parsing & the 204/304 exceptions
 
@@ -306,7 +316,7 @@ Normative for A2's implementation (no permission-request UI ships in A1 beyond d
 
 ## 12. Navigation & proof screen
 
-`Destinations` lists route string constants: `Home` (implemented in A1) and, as of A2, `Map`/`History`/`Geofences`/`Locate`/`Settings` (reserved in A1, wired to real screens now) plus a new additive `Invites` constant (§3.3/§3.4 — not reserved in A1, added the same way) and, as of H1, `SignIn` (§7). `WaldoNavHost` wires a `NavController` + one `composable(...)` per destination; each feature screen's `ViewModel` is constructed from `AppContainer`'s single `WaldoApiClient` (it implements all five 001 §3–§7 port interfaces, so each `ViewModelFactory` just narrows it to the one port it needs — no per-screen networking wiring). `Locate` takes its target `userId`/`displayName` from a `WaldoNavHost`-local `remember`ed selection (set when a roster row is tapped in the map screen) rather than a nav-graph path argument — this app has no external deep-link entry points, so a `{userId}` path template would only add percent-encoding risk (a `displayName` may contain spaces) for no benefit.
+`Destinations` lists route string constants: `Home` (implemented in A1) and, as of A2, `Map`/`History`/`Geofences`/`Locate`/`Settings` (reserved in A1, wired to real screens now) plus a new additive `Invites` constant (§3.3/§3.4 — not reserved in A1, added the same way), `SignIn` (§7), and the groups destinations `Groups`/`GroupDetail`/`GroupJoin`/`GroupMap` (§12.2). `WaldoNavHost` wires a `NavController` + one `composable(...)` per destination; each feature screen's `ViewModel` is constructed from `AppContainer`'s single `WaldoApiClient` (it implements all six 001 §3–§12 port interfaces, so each `ViewModelFactory` just narrows it to the one port it needs — no per-screen networking wiring). `Locate` takes its target `userId`/`displayName` from a `WaldoNavHost`-local `remember`ed selection (set when a roster row is tapped in the map screen) rather than a nav-graph path argument — the app's only external deep link is the group-join one (`waldo://group-join?code=…`, §12.2, whose payload is percent-safe Crockford base32 by construction), so a `{userId}` path template would only add percent-encoding risk (a `displayName` may contain spaces) for no benefit.
 
 **Proof screen — Home:** shows `AuthState` (`Loading` / `SignedOut` with a dev sign-in `WaldoButton` / `SignedIn` with a `WaldoStatusChip` reflecting device-registration outcome) built entirely from `ui/designsystem` components, state hoisted from `HomeStateHolder` (pure, constructor-injected `AuthProvider`/`DeviceRegistrar`, exposes `StateFlow<HomeUiState>`) via the thin `HomeViewModel : ViewModel()` wrapper. `HomeScreenLightPreview`/`HomeScreenDarkPreview` render it under `WaldoTheme(darkTheme = false/true)`. **A2 addition:** once registered, Home also renders a short quick-nav list of `WaldoButton`s (one per feature destination) — there is no bottom-nav/drawer design-system component yet, so this is the minimal reachability wiring, replaceable by a future design pass without touching any screen beneath it.
 
@@ -321,6 +331,18 @@ Each screen is stateless Composables (`ui/<feature>/<Feature>Screen.kt`) driven 
 - **`ui/settings`** (§3.5/§3.6/§4.2/§4.3): `SettingsStateHolder` loads `GET /families/me` + `GET /devices` together; every mutation (`updateDeviceSettings`, `updateMember`, `removeMember`) is gated by `isParent` (`myRole == "parent"`) **client-side before any network call** — a non-parent gets a local `mutationError` and the server is never hit, though the server enforces the same rule regardless (defense in depth, not the only guard).
 - **`ui/invites`** (§3.3/§3.4): `InvitesStateHolder` holds two independent, non-mutually-exclusive sub-flows (create-invite, accept-invite) in one plain `InvitesUiState` data class rather than a sealed hierarchy, since a screen can have both forms visible at once.
 - **`ui/signin`** (§7, H1 addition): see §7 for the full design — `SignInStateHolder`/`SignInScreen`/`Destinations.SignIn`.
+
+### 12.2 Groups screens (specs/005; wire shapes 001 §12)
+
+Same StateHolder/ViewModel/stateless-screen shape as §12.1, under `ui/groups/`:
+
+- **`GroupsListScreen`** — `GroupsListStateHolder` loads `GET /groups`; each group renders as a `WaldoCard` with name, member count, a `WaldoStatusChip` for `state` (`active`/`ended`/`archived`), and a countdown to `endsAt`; entry points to create and join. The list's empty state is also the **family-less home**: a signed-in user without a family (`FAMILY_NOT_FOUND`/`PROFILE_NOT_FOUND` on family calls, 001 §1.5) is no longer a dead end — Home offers family create/join *and* groups.
+- **`CreateGroupSheet`** — name, end date+time picker bounded by `features.limits.maxGroupDurationDays` (min now+1 h, per 001 §12.1), and a 3-way `expiryPolicy` selector that shows each policy's plain-language privacy line from 005 §2.1 verbatim; `displayName` field shown only when the caller has no profile yet.
+- **`GroupDetailScreen`** — roster (`WaldoListRow` per member), the join code with an OS share-sheet action (same pattern as invites); owner controls behind confirm dialogs: rename, extend/end (date picker within limits), rotate code, kick member, delete group. Members get Leave. `state`-dependent rendering per the 005 §2.3 matrix (grace: members see meta only; archived: roster memento, no map entry point).
+- **`GroupJoinScreen`** — code entry reusing the invite-code input/normalization pattern (001 §1.4), optional per-group display name; also the target of the **deep link** `waldo://group-join?code=XXXXXXXX` — the app's first, via a new manifest intent filter on `MainActivity`; the code payload is percent-safe by construction (Crockford base32 only) and is validated by the same pure normalization logic before any network call. HTTPS universal links are deferred (000 §O16).
+- **`GroupMapScreen`** — `GroupMapStateHolder` polls `GET /groups/{id}/locations/latest` the same way `MapStateHolder` treats the family map (§12.1), rendered through the same `MapRenderer` seam; markers show display name + stale dimming via the `isStale` flag. **Position-only** (005 §3): no device chips, no battery — the roster/marker UI simply has no such fields (the DTO doesn't carry them).
+
+Error rendering: the six group codes surface through `ApiErrorUserMessage` like every other code; `GROUP_EXPIRED` on the map/detail SHOULD bounce the user back to the groups list with a "this group has ended" notice (the list re-load then reflects the true state).
 
 ## 13. Configuration & H1-dependent stubs
 
@@ -340,17 +362,18 @@ Every test in this task's diff was written and read for correctness but **not ex
 
 ## 15. Error cases
 
-Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§6.1) — no code is invented, all 21 catalog codes are represented as named `ApiError` subtypes. `AUTH_TOKEN_EXPIRED` triggers the retry-once path (§6.4); all other errors surface to the caller as `ApiResult.Failure` for the ViewModel layer to render (rendering itself is A2). `VALIDATION_FAILED` on `POST /locations` additionally drives the fix-queue's rejection path (§10.3) by parsing `details.fields` entries of the shape `"fixes[<index>].<prop>"` to identify offending `fixId`s.
+Client-side error handling per 001 §10, all driven through `ApiErrorMapper` (§6.1) — no code is invented, all 27 catalog codes are represented as named `ApiError` subtypes. `AUTH_TOKEN_EXPIRED` triggers the retry-once path (§6.4); all other errors surface to the caller as `ApiResult.Failure` for the ViewModel layer to render (rendering itself is A2). `VALIDATION_FAILED` on `POST /locations` additionally drives the fix-queue's rejection path (§10.3) by parsing `details.fields` entries of the shape `"fixes[<index>].<prop>"` to identify offending `fixId`s.
 
 ## 16. Test checklist
 
 - Envelope: success unwraps `data`+`features`; `removeMember` yields `Success(Unit, features = null)`; `getGeofences` 304 yields `Success(null, features = null)`; error unwraps into the matching `ApiError` subtype with `requestId` preserved.
-- Errors: **every** 001 §10 code (all 21) maps to its named `ApiError` subtype, not `Unknown`; code-specific `details` (fields/reason/limit/currentEtag/deviceSettings/retryAfterSeconds/max) decode correctly.
+- Errors: **every** 001 §10 code (all 27) maps to its named `ApiError` subtype, not `Unknown`; code-specific `details` (fields/reason/limit/currentEtag/deviceSettings/retryAfterSeconds/max) decode correctly.
 - Auth-retry: a call receiving `AUTH_TOKEN_EXPIRED` triggers exactly one `currentIdToken(forceRefresh = true)` and one retry; a second expiry surfaces as `Failure`.
 - Device registration: request omits absent `pushToken`/`locationPushToken`; `deviceId` is a stable UUIDv4 per uid from `DeviceIdProvider`; a push-token refresh triggers exactly one `registerOrUpdate` call carrying the new token.
 - Fix-queue: `nextBatch()` idempotent (same `batchId`+fixes) until resolved; `markBatchAccepted` removes exactly the acked fixes; `markBatchRejected` drops only named offenders and the remainder gets a fresh `batchId` on the next call; `markBatchFailedTransient` changes nothing (retry-safe); new `enqueue()` during an in-flight batch never joins it; `maxSize` cap is respected; empty pool → `null`, never an empty batch.
 - `LocationSyncCoordinator`: success/transient-failure/rejection/paused outcomes each drive the correct `FixQueueStore` call.
 - `HomeStateHolder`: `Loading → SignedOut` when unauthenticated; `Loading → SignedIn` + successful registration state; registration failure surfaces an error state without crashing the state machine.
+- Groups (005 §7 client side): `GroupsApi` request-building per §5 row (routes, bare-204 handling on §12.5/12.8/12.9); the six group error codes map + render; `GroupsListStateHolder`/`GroupMapStateHolder`/create/join StateHolder logic against fakes (state chips from `state`, countdown from `endsAt`, policy copy per 005 §2.1, deep-link code prefill); no battery/device fields anywhere in group DTOs.
 - Phone sign-in (006 §10, Android side): `PhoneNumberNormalizerTest` covers every 006 §3 rule; `SignInStateHolderTest` covers every 006 §4.1 transition against a fake `AuthProvider` — happy path, every `PhoneAuthError` landing in its specced state/message, instant verification from both `SendingCode` and `EnteringCode`, resend blocked until the virtual-time cooldown hits 0 then exactly one re-invocation, `INVALID_CODE` staying on code entry vs `CODE_EXPIRED` returning to phone entry; `DevAuthProvider` two-step shape + unsigned-JWT token; no unit test imports the Firebase SDK.
 - Design system: every component file reads only `WaldoTheme.*` (reviewer spot-check — no automated enforcement in A1).
 
