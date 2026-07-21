@@ -9,12 +9,21 @@ export interface PlanLimits {
   historyDays: number;
   minSyncIntervalMinutes: number;
   locateRequestsPerDay: number;
+  /** Caller-scoped (001 §9): the caller's own non-expired memberships, owned + joined (005 §4). */
+  maxActiveGroups: number;
+  /** Owner-scoped (001 §9, §12.6): resolved from the group OWNER's plan at join time. */
+  maxGroupMembers: number;
+  /** Caller-scoped (001 §9, §12.1/§12.4): enforced against the caller's own features. */
+  maxGroupDurationDays: number;
+  /** Derived graceUntil for `grace`-policy groups (005 §2.2, §4). */
+  groupGraceDays: number;
 }
 
 export interface PlanFlags {
   pushToLocate: boolean;
   geofencing: boolean;
   historyReplay: boolean;
+  groups: boolean;
 }
 
 export interface PlanBenefits {
@@ -33,11 +42,16 @@ const FREE_PLAN: PlanBenefits = {
     historyDays: 90,
     minSyncIntervalMinutes: 5,
     locateRequestsPerDay: 100,
+    maxActiveGroups: 5,
+    maxGroupMembers: 50,
+    maxGroupDurationDays: 30,
+    groupGraceDays: 7,
   },
   flags: {
     pushToLocate: true,
     geofencing: true,
     historyReplay: true,
+    groups: true,
   },
 };
 

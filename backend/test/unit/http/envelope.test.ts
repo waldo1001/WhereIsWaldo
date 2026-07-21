@@ -51,7 +51,7 @@ describe("http/envelope", () => {
   });
 
   describe("error code catalog (001 §10)", () => {
-    it("contains exactly the 22 codes from the catalog — no invented codes", () => {
+    it("contains exactly the 27 codes from the catalog — no invented codes", () => {
       const catalogCodes = [
         "AUTH_MISSING_TOKEN",
         "AUTH_INVALID_TOKEN",
@@ -63,12 +63,17 @@ describe("http/envelope", () => {
         "MEMBER_NOT_FOUND",
         "DEVICE_NOT_FOUND",
         "LOCATE_REQUEST_NOT_FOUND",
+        "GROUP_NOT_FOUND",
         "FAMILY_ALREADY_MEMBER",
         "GEOFENCE_VERSION_CONFLICT",
+        "GROUP_ALREADY_MEMBER",
+        "GROUP_FULL",
         "INVITE_EXPIRED",
         "LOCATE_REQUEST_EXPIRED",
+        "GROUP_EXPIRED",
         "INVITE_INVALID",
         "INVITE_ALREADY_USED",
+        "GROUP_CODE_INVALID",
         "VALIDATION_FAILED",
         "LOCATION_BATCH_TOO_LARGE",
         "LIMIT_EXCEEDED",
@@ -91,12 +96,17 @@ describe("http/envelope", () => {
       expect(ERROR_STATUS.MEMBER_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.DEVICE_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.LOCATE_REQUEST_NOT_FOUND).toBe(404);
+      expect(ERROR_STATUS.GROUP_NOT_FOUND).toBe(404);
       expect(ERROR_STATUS.FAMILY_ALREADY_MEMBER).toBe(409);
       expect(ERROR_STATUS.GEOFENCE_VERSION_CONFLICT).toBe(409);
+      expect(ERROR_STATUS.GROUP_ALREADY_MEMBER).toBe(409);
+      expect(ERROR_STATUS.GROUP_FULL).toBe(409);
       expect(ERROR_STATUS.INVITE_EXPIRED).toBe(410);
       expect(ERROR_STATUS.LOCATE_REQUEST_EXPIRED).toBe(410);
+      expect(ERROR_STATUS.GROUP_EXPIRED).toBe(410);
       expect(ERROR_STATUS.INVITE_INVALID).toBe(400);
       expect(ERROR_STATUS.INVITE_ALREADY_USED).toBe(400);
+      expect(ERROR_STATUS.GROUP_CODE_INVALID).toBe(400);
       expect(ERROR_STATUS.VALIDATION_FAILED).toBe(400);
       expect(ERROR_STATUS.LOCATION_BATCH_TOO_LARGE).toBe(400);
       expect(ERROR_STATUS.LIMIT_EXCEEDED).toBe(402);

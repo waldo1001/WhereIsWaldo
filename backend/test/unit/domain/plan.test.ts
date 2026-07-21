@@ -13,11 +13,16 @@ describe("domain/plan", () => {
         historyDays: 90,
         minSyncIntervalMinutes: 5,
         locateRequestsPerDay: 100,
+        maxActiveGroups: 5,
+        maxGroupMembers: 50,
+        maxGroupDurationDays: 30,
+        groupGraceDays: 7,
       },
       flags: {
         pushToLocate: true,
         geofencing: true,
         historyReplay: true,
+        groups: true,
       },
     });
   });

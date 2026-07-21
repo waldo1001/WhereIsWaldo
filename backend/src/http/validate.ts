@@ -151,6 +151,49 @@ export const memberUserIdParamSchema = z.object({
 });
 export type MemberUserIdParam = z.infer<typeof memberUserIdParamSchema>;
 
+// specs/001 §12.3/§12.4/§12.5/§12.7/§12.9 — the {groupId} path param. groupId is always
+// server-generated (grp_ + 20 [A-Za-z0-9], §1.4), but the literal path segment is
+// caller-controlled, so validate defensively like memberUserIdParamSchema above.
+export const groupIdParamSchema = z.object({
+  groupId: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(ALLOWED_TABLE_KEY_CHARS, "groupId contains characters forbidden in a Table Storage key"),
+});
+export type GroupIdParam = z.infer<typeof groupIdParamSchema>;
+
+// specs/001 §12.1 — create group. name 1-50 chars; expiryPolicy is the 005 §2.1 enum;
+// endsAt is a datetime string here only — the >= now+1h / <= maxGroupDurationDays window
+// needs `now` + `features`, so it's a domain-level check (createGroup.ts), same idiom as
+// minSyncIntervalMinutes' plan floor. displayName is optional here too: "required only when
+// bootstrapping a profile" needs the profile lookup, also domain-level (001 §12.1/§1.5.3).
+export const createGroupRequestSchema = z.object({
+  name: z.string().min(1).max(50),
+  endsAt: z.string().datetime(),
+  expiryPolicy: z.enum(["delete", "grace", "archive"]),
+  displayName: z.string().min(1).max(30).optional(),
+});
+export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
+
+// specs/001 §12.6 — join group. code is canonicalized by the domain (uppercase, no hyphen,
+// same as inviteCode) AFTER this schema validates its raw shape — 16 chars comfortably
+// covers the 8-char canonical form plus the "XXXX-XXXX" hyphenated display form, and the
+// same Table-Storage-key character gate as groupIdParamSchema/memberUserIdParamSchema
+// applies here too: the normalized code is used verbatim as a GroupCodes PartitionKey
+// (002 §2.11), so an unvalidated value could otherwise reach the table adapter and surface
+// a raw SDK RestError as 500 instead of a clean 400 (docs/security-review-checklist.md).
+// displayName optional (same bootstrap rule as createGroupRequestSchema above).
+export const joinGroupRequestSchema = z.object({
+  code: z
+    .string()
+    .min(1)
+    .max(16)
+    .regex(ALLOWED_TABLE_KEY_CHARS, "code contains characters forbidden in a Table Storage key"),
+  displayName: z.string().min(1).max(30).optional(),
+});
+export type JoinGroupRequest = z.infer<typeof joinGroupRequestSchema>;
+
 // specs/001 §6.1 — create locate request: exactly one of targetUserId | targetDeviceId.
 // No custom .refine() message: parseOrThrow only ever surfaces `issue.path` (see
 // formatFieldPath above), never `issue.message`, so a message here would be dead weight.

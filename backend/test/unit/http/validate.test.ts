@@ -2,7 +2,7 @@
 // §3: "validation before use" for path inputs, not just request bodies).
 
 import { describe, expect, it } from "vitest";
-import { deviceIdParamSchema, memberUserIdParamSchema, parseOrThrow } from "../../../src/http/validate";
+import { deviceIdParamSchema, groupIdParamSchema, memberUserIdParamSchema, parseOrThrow } from "../../../src/http/validate";
 import { expectAppError } from "../../support/expectAppError";
 
 /** parseOrThrow is synchronous; wrap the call so expectAppError can assert on the rejection. */
@@ -77,5 +77,41 @@ describe("http/validate deviceIdParamSchema", () => {
 
   it('throws VALIDATION_FAILED with details.fields: ["deviceId"] for a missing deviceId (path param absent)', async () => {
     await expectAppError(parseDeviceId({ deviceId: undefined }), "VALIDATION_FAILED", { fields: ["deviceId"] });
+  });
+});
+
+// specs/001 §12.3 — the {groupId} path param (only exercised from the untested, thin
+// groups.functions.ts layer — tested directly here to keep it under the mutation gate,
+// same rationale as memberUserIdParamSchema above).
+describe("http/validate groupIdParamSchema", () => {
+  async function parseGroupId(input: unknown) {
+    return parseOrThrow(groupIdParamSchema, input);
+  }
+
+  it("accepts a well-formed groupId", async () => {
+    const result = await parseGroupId({ groupId: "grp_9J2Kq7Lm3NpR5sTvWxYz" });
+
+    expect(result).toEqual({ groupId: "grp_9J2Kq7Lm3NpR5sTvWxYz" });
+  });
+
+  it('throws VALIDATION_FAILED with details.fields: ["groupId"] for an empty groupId', async () => {
+    await expectAppError(parseGroupId({ groupId: "" }), "VALIDATION_FAILED", { fields: ["groupId"] });
+  });
+
+  it('throws VALIDATION_FAILED with details.fields: ["groupId"] for a missing groupId (path param absent)', async () => {
+    await expectAppError(parseGroupId({ groupId: undefined }), "VALIDATION_FAILED", { fields: ["groupId"] });
+  });
+
+  it("throws VALIDATION_FAILED for a groupId over the 128-char max", async () => {
+    await expectAppError(parseGroupId({ groupId: "x".repeat(129) }), "VALIDATION_FAILED", { fields: ["groupId"] });
+  });
+
+  it.each([
+    ["a/b", "forward slash"],
+    ["a\\b", "backslash"],
+    ["a#b", "hash"],
+    ["a?b", "question mark"],
+  ])("throws VALIDATION_FAILED for a groupId containing a forbidden %s", async (malformed) => {
+    await expectAppError(parseGroupId({ groupId: malformed }), "VALIDATION_FAILED", { fields: ["groupId"] });
   });
 });

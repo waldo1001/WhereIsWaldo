@@ -55,6 +55,16 @@ export interface UserProfile {
   displayName: string;
 }
 
+// specs/002 §2.2 — the `group:{groupId}` reverse-index row: "my groups" without a
+// cross-partition query. Deliberately does NOT denormalize name/endsAt (see 002 §2.2).
+export type GroupRole = "owner" | "member";
+
+export interface GroupMembershipIndexEntry {
+  groupId: string;
+  role: GroupRole;
+  joinedAt: string;
+}
+
 export interface UserRepo {
   /** The one point read every authenticated request performs (001 §1.5). */
   getProfile(userId: string): Promise<UserProfile | null>;
@@ -64,6 +74,10 @@ export interface UserRepo {
   updateProfile(userId: string, patch: Partial<UserProfile>): Promise<void>;
   /** Membership removal (001 §3.6). */
   deleteProfile(userId: string): Promise<void>;
+  /** Writes one `group:{groupId}` reverse-index row (001 §12.1/§12.6, 002 §2.2). */
+  addGroupMembership(userId: string, entry: GroupMembershipIndexEntry): Promise<void>;
+  /** Partition scan of `group:` rows = the "my groups" reverse index (001 §12.2, 002 §2.2). */
+  listGroupMemberships(userId: string): Promise<GroupMembershipIndexEntry[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,4 +234,72 @@ export interface UsageRepo {
   /** Read → +by → ETag-guarded merge, retry loop handled by the adapter (002 §2.9). */
   increment(familyId: string, metric: UsageMetric, date: string, by?: number): Promise<void>;
   get(familyId: string, metric: UsageMetric, date: string): Promise<number>;
+}
+
+// ---------------------------------------------------------------------------
+// Groups (specs/002 §2.10, specs/001 §12.1-§12.3/§12.6 — this task; §12.4-§12.9 later (B10))
+// ---------------------------------------------------------------------------
+
+export type GroupExpiryPolicy = "delete" | "grace" | "archive";
+
+export interface GroupMeta {
+  groupId: string;
+  name: string;
+  ownerUserId: string;
+  createdAt: string;
+  endsAt: string;
+  expiryPolicy: GroupExpiryPolicy;
+  /** Current join code, denormalized for display (002 §2.10) — NOT the source of truth for
+   * validity; that's GroupCodeRepo/GroupCodes (002 §2.11). */
+  code: string;
+}
+
+export interface GroupMember {
+  userId: string;
+  role: GroupRole;
+  /** Per-group display name (005 §1) — chosen at create/join, not editable in v1. */
+  displayName: string;
+  joinedAt: string;
+}
+
+export interface GroupRepo {
+  /** Conditional insert of the `meta` row (001 §12.1, 002 §2.10). */
+  createGroupMeta(meta: GroupMeta): Promise<void>;
+  /** Point read of the `meta` row (001 §12.2/§12.3/§12.6). */
+  getGroupMeta(groupId: string): Promise<GroupMeta | null>;
+  /** Conditional insert of one `member:{userId}` row — race-safe join (001 §12.1/§12.6, 002 §2.10). */
+  addMember(groupId: string, member: GroupMember): Promise<void>;
+  /** Partition scan of `member:` rows = the roster + memberCount (001 §12.2/§12.3/§12.6). */
+  listMembers(groupId: string): Promise<GroupMember[]>;
+  /** Point read of a single member row — membership + role check (001 §12.3/§12.6). */
+  getMember(groupId: string, userId: string): Promise<GroupMember | null>;
+}
+
+// ---------------------------------------------------------------------------
+// GroupCodes (specs/002 §2.11, specs/001 §12.6 — this task; §12.7 rotate later (B10))
+// ---------------------------------------------------------------------------
+
+export interface GroupCodeRecord {
+  groupId: string;
+  createdAt: string;
+}
+
+export interface GroupCodeRepo {
+  /** Conditional insert of the `{code}` row (001 §12.1, 002 §2.11). */
+  createCode(code: string, record: GroupCodeRecord): Promise<void>;
+  /** Point read — the join lookup (001 §12.6, 002 §2.11). */
+  getCode(code: string): Promise<GroupCodeRecord | null>;
+}
+
+// ---------------------------------------------------------------------------
+// GroupExpiry (specs/002 §2.13 — the sweeper's index; this task only writes the initial
+// row at create, B10 moves it on PATCH endsAt, B12 is the sweeper that reads it)
+// ---------------------------------------------------------------------------
+
+export type GroupExpiryAction = "expire" | "hardDelete";
+
+export interface GroupExpiryRepo {
+  /** Writes the `{bucketDate}:{groupId}` row (002 §2.13) — bucket is the UTC date
+   * (`yyyy-MM-dd`) of the group's next lifecycle action. */
+  putExpiryRow(bucketDate: string, groupId: string, action: GroupExpiryAction): Promise<void>;
 }
