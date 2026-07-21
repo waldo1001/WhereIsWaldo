@@ -6,23 +6,30 @@ import Foundation
 /// unrecognized falls back to `.unknown` (forward-compat, defensive only).
 struct APIErrorCodeTests {
 
-    /// The complete 001 §10 catalog (21 codes) mapped to the expected case.
+    /// The complete 001 §10 catalog (27 codes, incl. the six group-era additions from
+    /// specs/005-temporary-groups.md) mapped to the expected case.
     let catalog: [(raw: String, expected: APIErrorCode)] = [
         ("AUTH_MISSING_TOKEN", .authMissingToken),
         ("AUTH_INVALID_TOKEN", .authInvalidToken),
         ("AUTH_TOKEN_EXPIRED", .authTokenExpired),
         ("AUTH_FORBIDDEN", .authForbidden),
         ("TRACKING_PAUSED", .trackingPaused),
+        ("PROFILE_NOT_FOUND", .profileNotFound),
         ("FAMILY_NOT_FOUND", .familyNotFound),
         ("MEMBER_NOT_FOUND", .memberNotFound),
         ("DEVICE_NOT_FOUND", .deviceNotFound),
         ("LOCATE_REQUEST_NOT_FOUND", .locateRequestNotFound),
+        ("GROUP_NOT_FOUND", .groupNotFound),
         ("FAMILY_ALREADY_MEMBER", .familyAlreadyMember),
         ("GEOFENCE_VERSION_CONFLICT", .geofenceVersionConflict),
+        ("GROUP_ALREADY_MEMBER", .groupAlreadyMember),
+        ("GROUP_FULL", .groupFull),
         ("INVITE_EXPIRED", .inviteExpired),
         ("LOCATE_REQUEST_EXPIRED", .locateRequestExpired),
+        ("GROUP_EXPIRED", .groupExpired),
         ("INVITE_INVALID", .inviteInvalid),
         ("INVITE_ALREADY_USED", .inviteAlreadyUsed),
+        ("GROUP_CODE_INVALID", .groupCodeInvalid),
         ("VALIDATION_FAILED", .validationFailed),
         ("LOCATION_BATCH_TOO_LARGE", .locationBatchTooLarge),
         ("LIMIT_EXCEEDED", .limitExceeded),
@@ -31,8 +38,8 @@ struct APIErrorCodeTests {
         ("PUSH_DELIVERY_FAILED", .pushDeliveryFailed),
     ]
 
-    @Test func catalogHasExactlyTwentyOneCodes() {
-        #expect(catalog.count == 21, "001 §10 defines exactly 21 codes")
+    @Test func catalogHasExactlyTwentySevenCodes() {
+        #expect(catalog.count == 27, "001 §10 defines exactly 27 codes after specs/005 (groups)")
     }
 
     @Test func allCatalogCodes_roundTripThroughRawValue() {

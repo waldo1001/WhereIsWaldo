@@ -14,6 +14,8 @@ extension APIError {
                 return "You don't have permission to do that."
             case .trackingPaused:
                 return "Tracking is paused for this device."
+            case .profileNotFound:
+                return "We couldn't find your profile."
             case .familyNotFound:
                 return "Family not found."
             case .memberNotFound:
@@ -22,18 +24,28 @@ extension APIError {
                 return "That device could not be found."
             case .locateRequestNotFound:
                 return "That locate request could not be found."
+            case .groupNotFound:
+                return "That group could not be found."
             case .familyAlreadyMember:
                 return "You already belong to a family."
             case .geofenceVersionConflict:
                 return "Someone else updated the geofences. Refresh and try again."
+            case .groupAlreadyMember:
+                return "You already belong to that group."
+            case .groupFull:
+                return "That group is full."
             case .inviteExpired:
                 return "That invite code has expired."
             case .locateRequestExpired:
                 return "That locate request has expired."
+            case .groupExpired:
+                return "That group has ended."
             case .inviteInvalid:
                 return "That invite code isn't valid."
             case .inviteAlreadyUsed:
                 return "That invite code has already been used."
+            case .groupCodeInvalid:
+                return "That group code isn't valid."
             case .validationFailed:
                 return "Please check your input and try again."
             case .locationBatchTooLarge:
