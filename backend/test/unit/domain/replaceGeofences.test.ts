@@ -3,6 +3,7 @@ import { replaceGeofences } from "../../../src/domain/geofence/replaceGeofences"
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryGeofenceConfigRepo } from "../../fakes/inMemoryGeofenceConfigRepo";
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FakePushSender } from "../../fakes/fakePushSender";
@@ -19,11 +20,35 @@ function buildDeps() {
   return {
     geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
     deviceRepo: new InMemoryDeviceRepo(),
+    familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo,
     usageRepo: new InMemoryUsageRepo(),
     pushSender: new FakePushSender(),
     clock: new FixedClock(new Date(NOW)),
   };
+}
+
+// specs/002 §2.4 (B8 re-key) — the push fan-out now requires a family roster to find each
+// member's Devices partition.
+async function seedFamily(deps: ReturnType<typeof buildDeps>): Promise<void> {
+  await deps.familyRepo.createFamily({
+    familyId: FAMILY_ID,
+    familyName: "Wauters",
+    createdBy: "u1",
+    createdAt: "2026-07-01T00:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u1",
+    role: "parent",
+    displayName: "Eric",
+    joinedAt: "2026-07-01T00:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u2",
+    role: "member",
+    displayName: "Noor",
+    joinedAt: "2026-07-01T00:00:00Z",
+  });
 }
 
 function device(overrides: Partial<DeviceRecord> = {}): DeviceRecord {
@@ -90,6 +115,7 @@ describe("domain/geofence/replaceGeofences", () => {
     const deps = {
       geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
       deviceRepo: new InMemoryDeviceRepo(),
+      familyRepo: new InMemoryFamilyRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
       usageRepo: new InMemoryUsageRepo(),
       pushSender: new FakePushSender(),
@@ -282,10 +308,11 @@ describe("domain/geofence/replaceGeofences", () => {
     expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 
-  it("sends GEOFENCE_CONFIG_CHANGED to ALL family devices (not excluding anyone) with the new etag", async () => {
+  it("sends GEOFENCE_CONFIG_CHANGED to ALL family devices (not excluding anyone) with the new etag, fanning out per-member (002 §2.4)", async () => {
     const deps = buildDeps();
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-a", ownerUserId: "u1" }));
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-b", ownerUserId: "u2", pushToken: "fcm-token-b" }));
+    await seedFamily(deps);
+    deps.deviceRepo.seed("u1", device({ deviceId: "device-a", ownerUserId: "u1" }));
+    deps.deviceRepo.seed("u2", device({ deviceId: "device-b", ownerUserId: "u2", pushToken: "fcm-token-b" }));
 
     const result = await replaceGeofences(baseInput(), deps);
 
@@ -297,14 +324,25 @@ describe("domain/geofence/replaceGeofences", () => {
     }
 
     // A successful ("ok") send must NOT mark the device pushInvalid.
-    expect((await deps.deviceRepo.getDevice(FAMILY_ID, "device-a"))?.pushInvalid).toBe(false);
-    expect((await deps.deviceRepo.getDevice(FAMILY_ID, "device-b"))?.pushInvalid).toBe(false);
+    expect((await deps.deviceRepo.getDevice("u1", "device-a"))?.pushInvalid).toBe(false);
+    expect((await deps.deviceRepo.getDevice("u2", "device-b"))?.pushInvalid).toBe(false);
+  });
+
+  it("never fans out to a stranger's device (not a member of this family) — fan-out only visits the family's roster partitions (002 §2.4)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    deps.deviceRepo.seed("stranger", device({ deviceId: "device-stranger", ownerUserId: "stranger" }));
+
+    await replaceGeofences(baseInput(), deps);
+
+    expect(deps.pushSender.sent).toHaveLength(0);
   });
 
   it("skips push fan-out for devices with no pushToken or pushInvalid: true", async () => {
     const deps = buildDeps();
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-a", pushToken: undefined }));
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-b", pushInvalid: true }));
+    await seedFamily(deps);
+    deps.deviceRepo.seed("u1", device({ deviceId: "device-a", pushToken: undefined }));
+    deps.deviceRepo.seed("u2", device({ deviceId: "device-b", ownerUserId: "u2", pushInvalid: true }));
 
     await replaceGeofences(baseInput(), deps);
 
@@ -313,18 +351,20 @@ describe("domain/geofence/replaceGeofences", () => {
 
   it("marks a device pushInvalid: true when FCM reports an invalid token", async () => {
     const deps = buildDeps();
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-a" }));
+    await seedFamily(deps);
+    deps.deviceRepo.seed("u1", device({ deviceId: "device-a" }));
     deps.pushSender.setOutcome("invalidToken");
 
     await replaceGeofences(baseInput(), deps);
 
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, "device-a");
+    const stored = await deps.deviceRepo.getDevice("u1", "device-a");
     expect(stored?.pushInvalid).toBe(true);
   });
 
   it("does not fail the request when a push send throws (best-effort fan-out)", async () => {
     const deps = buildDeps();
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "device-a" }));
+    await seedFamily(deps);
+    deps.deviceRepo.seed("u1", device({ deviceId: "device-a" }));
     deps.pushSender.send = async () => {
       throw new Error("transport failure");
     };

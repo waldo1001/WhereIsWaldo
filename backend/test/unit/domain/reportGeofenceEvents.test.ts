@@ -72,7 +72,7 @@ async function seedFamily(deps: ReturnType<typeof buildDeps>): Promise<void> {
 }
 
 function seedReporterDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<DeviceRecord> = {}): void {
-  deps.deviceRepo.seed(FAMILY_ID, {
+  deps.deviceRepo.seed(REPORTER_UID, {
     deviceId: DEVICE_ID,
     ownerUserId: REPORTER_UID,
     platform: "android",
@@ -89,7 +89,7 @@ function seedReporterDevice(deps: ReturnType<typeof buildDeps>, overrides: Parti
 }
 
 function seedOtherDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<DeviceRecord> = {}): void {
-  deps.deviceRepo.seed(FAMILY_ID, {
+  deps.deviceRepo.seed(OTHER_UID, {
     deviceId: OTHER_DEVICE_ID,
     ownerUserId: OTHER_UID,
     platform: "ios",
@@ -281,7 +281,7 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     });
 
     // A successful ("ok") send must NOT mark the target device pushInvalid.
-    expect((await deps.deviceRepo.getDevice(FAMILY_ID, OTHER_DEVICE_ID))?.pushInvalid).toBe(false);
+    expect((await deps.deviceRepo.getDevice(OTHER_UID, OTHER_DEVICE_ID))?.pushInvalid).toBe(false);
   });
 
   it("falls back to the reporter's uid as displayName when they're not in the family roster", async () => {
@@ -310,7 +310,7 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     expect(deps.pushSender.sent[0]!.data.displayName).toBe(REPORTER_UID);
   });
 
-  it("resolves the reporter's displayName and the family device roster only ONCE per batch (caching)", async () => {
+  it("resolves the reporter's displayName and the family device roster only ONCE per batch (caching), fanning out one listDevices call per family member (002 §2.4)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
     seedReporterDevice(deps);
@@ -325,14 +325,15 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     };
     let listDevicesCalls = 0;
     const originalListDevices = deps.deviceRepo.listDevices.bind(deps.deviceRepo);
-    deps.deviceRepo.listDevices = async (familyId: string) => {
+    deps.deviceRepo.listDevices = async (ownerUserId: string) => {
       listDevicesCalls++;
-      return originalListDevices(familyId);
+      return originalListDevices(ownerUserId);
     };
 
     // Two DIFFERENT events, both triggering fan-out (enter matches notifyOnEnter, exit
     // matches notifyOnExit) — displayName/family-roster resolution must happen once, not
-    // once per fanned-out event.
+    // once per fanned-out event. listDevices is called once PER MEMBER (2 members here),
+    // never once per event.
     await reportGeofenceEvents(
       baseInput({
         body: {
@@ -346,7 +347,7 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     );
 
     expect(listMembersCalls).toBe(1);
-    expect(listDevicesCalls).toBe(1);
+    expect(listDevicesCalls).toBe(2);
     expect(deps.pushSender.sent).toHaveLength(2);
   });
 
@@ -423,12 +424,37 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     expect(deps.pushSender.sent).toHaveLength(0);
   });
 
+  it("never fans out to a stranger's device (not a member of this family) — fan-out only visits the family's roster partitions (002 §2.4)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    seedReporterDevice(deps);
+    deps.deviceRepo.seed("stranger", {
+      deviceId: "5f1a3b0d-7c2e-5f9a-ab3c-8d6e5f4a3b2e",
+      ownerUserId: "stranger",
+      platform: "ios",
+      model: "Stranger's phone",
+      appVersion: "1.0.0",
+      deviceName: "Stranger's phone",
+      pushToken: "fcm-token-stranger",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
+    deps.geofenceConfigRepo.seedConfig(FAMILY_ID, { version: 1, geofences: [HOME_GEOFENCE] }, '"cfg-etag"');
+
+    await reportGeofenceEvents(baseInput(), deps);
+
+    expect(deps.pushSender.sent).toHaveLength(0);
+  });
+
   it("skips fan-out to devices with no pushToken or pushInvalid: true", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
     seedReporterDevice(deps);
     seedOtherDevice(deps, { pushToken: undefined });
-    deps.deviceRepo.seed(FAMILY_ID, {
+    deps.deviceRepo.seed(OTHER_UID, {
       deviceId: "5f1a3b0d-7c2e-5f9a-ab3c-8d6e5f4a3b2d",
       ownerUserId: OTHER_UID,
       platform: "ios",
@@ -459,7 +485,7 @@ describe("domain/geofence/reportGeofenceEvents", () => {
 
     await reportGeofenceEvents(baseInput(), deps);
 
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, OTHER_DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice(OTHER_UID, OTHER_DEVICE_ID);
     expect(stored?.pushInvalid).toBe(true);
   });
 

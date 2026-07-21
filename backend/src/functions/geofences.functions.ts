@@ -89,7 +89,7 @@ app.http("replaceGeofences", {
       const body: unknown = await request.json().catch(() => ({}));
       const result = await replaceGeofences(
         { familyId: auth.familyId, role: auth.role, ifMatch: request.headers.get("if-match"), body },
-        { geofenceConfigRepo, deviceRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { geofenceConfigRepo, deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
       );
       return {
         status: 200,
