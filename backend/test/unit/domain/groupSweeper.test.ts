@@ -181,6 +181,7 @@ describe("domain/group/groupSweeper sweepGroups", () => {
     const result = await sweepGroups(deps);
 
     expect(result.hardDeleted).toEqual(["grp_a"]);
+    expect(result.skipped).toEqual([]);
     expect(await deps.groupRepo.getGroupMeta("grp_a")).toBeNull();
     expect(await deps.groupRepo.listMembers("grp_a")).toEqual([]);
     expect(await deps.groupCodeRepo.getCode("ABCD1234")).toBeNull();
@@ -377,5 +378,130 @@ describe("domain/group/groupSweeper sweepGroups", () => {
     expect(result.errors).toEqual([
       { groupId: "grp_boom", bucketDate: boomMeta.endsAt.slice(0, 10), message: "simulated storage failure" },
     ]);
+  });
+
+  // Security fix (docs/security-review-checklist.md finding): TOCTOU race between a
+  // concurrent owner PATCH-extend and the sweeper's stale read. Each test below wraps
+  // groupRepo.getGroupMeta so that, right after capturing the snapshot the sweeper will act
+  // on, it injects a REAL concurrent mutation (via the same fake's updateGroupMeta, which
+  // rotates the meta row's simulated ETag exactly like a real owner PATCH would) before
+  // returning that now-stale snapshot to the sweeper — reproducing "a PATCH lands between the
+  // sweeper's read and its final delete for that exact row". assertGroupMetaUnchanged must
+  // then detect the ETag mismatch and the row must be skipped, not acted on.
+
+  it("SECURITY: skips (does not hard-delete) when a concurrent PATCH-extend lands between the sweeper's read and its delete", async () => {
+    const deps = buildDeps();
+    const meta = baseMeta({ endsAt: daysFromNow(0) + "T09:00:00Z", expiryPolicy: "delete" });
+    await seedGroup(deps, meta, { members: ["u9"], withLocations: true });
+    const bucket = meta.endsAt.slice(0, 10);
+    await seedExpiryRow(deps, bucket, meta.groupId);
+
+    const realGetGroupMeta = deps.groupRepo.getGroupMeta.bind(deps.groupRepo);
+    const extendedEndsAt = daysFromNow(30) + "T00:00:00Z";
+    let raceInjected = false;
+    deps.groupRepo.getGroupMeta = async (groupId: string) => {
+      const snapshot = await realGetGroupMeta(groupId);
+      if (groupId === meta.groupId && !raceInjected) {
+        raceInjected = true;
+        // The concurrent owner PATCH: rotates meta's ETag via the SAME fake, exactly like a
+        // real Table Storage conditional update would.
+        await deps.groupRepo.updateGroupMeta(groupId, { endsAt: extendedEndsAt });
+      }
+      return snapshot; // the sweeper still acts on its (now-stale) snapshot
+    };
+
+    const result = await sweepGroups(deps);
+
+    expect(result.skipped).toEqual(["grp_a"]);
+    expect(result.hardDeleted).toEqual([]);
+    expect(result.errors).toEqual([]);
+    // The group survives, fully intact, with the concurrent extend actually applied.
+    const survivingMeta = await realGetGroupMeta(meta.groupId);
+    expect(survivingMeta?.endsAt).toBe(extendedEndsAt);
+    expect(await deps.groupRepo.listMembers(meta.groupId)).toHaveLength(2);
+    expect(await deps.groupCodeRepo.getCode(meta.code)).not.toBeNull();
+    expect(await deps.groupLastKnownRepo.listByGroup(meta.groupId)).toHaveLength(1);
+  });
+
+  it("SECURITY: skips (does not wipe locations/code) when a concurrent PATCH lands between the read and an archive-policy wipe", async () => {
+    const deps = buildDeps();
+    const meta = baseMeta({ endsAt: daysFromNow(0) + "T09:00:00Z", expiryPolicy: "archive" });
+    await seedGroup(deps, meta, { withLocations: true });
+    const bucket = meta.endsAt.slice(0, 10);
+    await seedExpiryRow(deps, bucket, meta.groupId);
+
+    const realGetGroupMeta = deps.groupRepo.getGroupMeta.bind(deps.groupRepo);
+    let raceInjected = false;
+    deps.groupRepo.getGroupMeta = async (groupId: string) => {
+      const snapshot = await realGetGroupMeta(groupId);
+      if (groupId === meta.groupId && !raceInjected) {
+        raceInjected = true;
+        await deps.groupRepo.updateGroupMeta(groupId, { name: "renamed concurrently" });
+      }
+      return snapshot;
+    };
+
+    const result = await sweepGroups(deps);
+
+    expect(result.skipped).toEqual(["grp_a"]);
+    expect(result.archived).toEqual([]);
+    expect(await deps.groupCodeRepo.getCode(meta.code)).not.toBeNull();
+    expect(await deps.groupLastKnownRepo.listByGroup(meta.groupId)).toHaveLength(1);
+  });
+
+  it("SECURITY: skips (does not wipe locations/code or re-bucket) when a concurrent PATCH lands between the read and a grace-transition wipe", async () => {
+    const deps = buildDeps();
+    const meta = baseMeta({ endsAt: daysFromNow(0) + "T09:00:00Z", expiryPolicy: "grace" });
+    await seedGroup(deps, meta, { withLocations: true });
+    const bucket = meta.endsAt.slice(0, 10);
+    await seedExpiryRow(deps, bucket, meta.groupId);
+
+    const realGetGroupMeta = deps.groupRepo.getGroupMeta.bind(deps.groupRepo);
+    let raceInjected = false;
+    deps.groupRepo.getGroupMeta = async (groupId: string) => {
+      const snapshot = await realGetGroupMeta(groupId);
+      if (groupId === meta.groupId && !raceInjected) {
+        raceInjected = true;
+        await deps.groupRepo.updateGroupMeta(groupId, { name: "renamed concurrently" });
+      }
+      return snapshot;
+    };
+
+    const result = await sweepGroups(deps);
+
+    expect(result.skipped).toEqual(["grp_a"]);
+    expect(result.graceTransitioned).toEqual([]);
+    expect(await deps.groupCodeRepo.getCode(meta.code)).not.toBeNull();
+    expect(await deps.groupLastKnownRepo.listByGroup(meta.groupId)).toHaveLength(1);
+    // Left exactly where found — not re-bucketed to a hardDelete-action row.
+    expect(await deps.groupExpiryRepo.listByDate(bucket)).toEqual([{ groupId: "grp_a", action: "expire" }]);
+  });
+
+  it("throws (isolated to result.errors) if a GroupMeta snapshot is somehow missing its ETag", async () => {
+    const deps = buildDeps();
+    const meta = baseMeta({ endsAt: daysFromNow(0) + "T09:00:00Z", expiryPolicy: "delete" });
+    await seedGroup(deps, meta);
+    const bucket = meta.endsAt.slice(0, 10);
+    await seedExpiryRow(deps, bucket, meta.groupId);
+
+    const realGetGroupMeta = deps.groupRepo.getGroupMeta.bind(deps.groupRepo);
+    deps.groupRepo.getGroupMeta = async (groupId: string) => {
+      const snapshot = await realGetGroupMeta(groupId);
+      return snapshot ? { ...snapshot, etag: undefined } : snapshot;
+    };
+
+    const result = await sweepGroups(deps);
+
+    expect(result.hardDeleted).toEqual([]);
+    expect(result.skipped).toEqual([]);
+    expect(result.errors).toEqual([
+      {
+        groupId: "grp_a",
+        bucketDate: bucket,
+        message: "GroupMeta for grp_a has no ETag — cannot safely verify freshness before a destructive sweep action",
+      },
+    ]);
+    // Untouched — the row stays exactly as found, retried on the next run.
+    expect(await deps.groupRepo.getGroupMeta("grp_a")).not.toBeNull();
   });
 });

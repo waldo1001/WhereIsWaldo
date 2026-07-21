@@ -41,7 +41,8 @@ app.timer("groupSweeper", {
         `groupSweeper: scanned ${result.scannedBuckets} buckets / ${result.rowsScanned} rows — ` +
           `hardDeleted=${result.hardDeleted.length} graceTransitioned=${result.graceTransitioned.length} ` +
           `archived=${result.archived.length} rebucketed=${result.rebucketed.length} ` +
-          `orphansCleaned=${result.orphansCleaned.length} errors=${result.errors.length}`,
+          `orphansCleaned=${result.orphansCleaned.length} skipped=${result.skipped.length} ` +
+          `errors=${result.errors.length}`,
       );
       if (result.errors.length > 0) {
         // groupId + message only — never location data (there is none in a GroupExpiry row

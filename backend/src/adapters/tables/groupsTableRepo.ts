@@ -3,13 +3,24 @@
 
 import { odata, RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
-import type { GroupExpiryPolicy, GroupMember, GroupMeta, GroupRepo, GroupRole } from "../../ports/repositories";
+import type {
+  GroupExpiryPolicy,
+  GroupMember,
+  GroupMeta,
+  GroupMetaAssertOutcome,
+  GroupRepo,
+  GroupRole,
+} from "../../ports/repositories";
 
 const META_ROW_KEY = "meta";
 const MEMBER_PREFIX = "member:";
 
 function isNotFound(err: unknown): boolean {
   return err instanceof RestError && err.statusCode === 404;
+}
+
+function isPreconditionFailed(err: unknown): boolean {
+  return err instanceof RestError && (err.statusCode === 412 || err.statusCode === 409);
 }
 
 export class TableGroupRepo implements GroupRepo {
@@ -39,6 +50,7 @@ export class TableGroupRepo implements GroupRepo {
         endsAt: String(entity.endsAt),
         expiryPolicy: entity.expiryPolicy as GroupExpiryPolicy,
         code: String(entity.code),
+        etag: entity.etag,
       };
     } catch (err) {
       if (isNotFound(err)) return null;
@@ -119,6 +131,21 @@ export class TableGroupRepo implements GroupRepo {
       await this.client.deleteEntity(groupId, `${MEMBER_PREFIX}${userId}`);
     } catch (err) {
       if (!isNotFound(err)) throw err;
+    }
+  }
+
+  async assertGroupMetaUnchanged(groupId: string, etag: string): Promise<GroupMetaAssertOutcome> {
+    try {
+      // A no-op merge (no properties beyond the key) — the ETag precondition is still
+      // enforced server-side even though nothing is actually changed. B12 security fix
+      // (002 §4.1 TOCTOU): the sweeper calls this immediately before any destructive action.
+      await this.client.updateEntity({ partitionKey: groupId, rowKey: META_ROW_KEY }, "Merge", { etag });
+      return "ok";
+    } catch (err) {
+      // Both "changed" (412/409) and "gone entirely" (404 — e.g. the owner's own DELETE raced
+      // in first) mean the caller's snapshot is stale; either way it's a conflict, not a throw.
+      if (isPreconditionFailed(err) || isNotFound(err)) return "conflict";
+      throw err;
     }
   }
 }

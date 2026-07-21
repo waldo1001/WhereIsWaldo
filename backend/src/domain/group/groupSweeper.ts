@@ -58,6 +58,16 @@ export interface SweepGroupsResult {
   archived: string[];
   /** Full hard delete (002 §4.1 step 3, or step 4's second half at graceUntil). */
   hardDeleted: string[];
+  /**
+   * Security fix (002 §4.1 TOCTOU race, docs/security-review-checklist.md): a row whose
+   * `Groups.meta` was mutated (e.g. an owner's concurrent `PATCH endsAt` extend) or deleted
+   * between this run's read and its would-be destructive action (archive/grace-wipe or hard
+   * delete). Detected via `assertGroupMetaUnchanged`'s ETag check immediately before acting;
+   * NOT an error — the row is simply left exactly as found and re-evaluated correctly on a
+   * later sweep pass (or via the re-bucket path, if the concurrent change also moved its
+   * GroupExpiry bucket).
+   */
+  skipped: string[];
   /** Per-row failures — the run keeps going for every other row; a failed row simply stays in
    * its bucket and is retried on the next scheduled run (it remains inside the window until
    * it ages out past SWEEP_WINDOW_DAYS). No location payloads here — groupId + error message
@@ -101,6 +111,31 @@ async function resolveGroupGraceDays(
   return getFeatures(entitlements.subscriptionStatus).limits.groupGraceDays;
 }
 
+/**
+ * Security fix (002 §4.1 TOCTOU race): re-verifies, via the SAME ETag-conditional-write idiom
+ * `LastKnown`/`GroupLastKnown`/`Invites`/`Usage` already use, that `meta` has not been mutated
+ * (or deleted) since this row's `getGroupMeta` read — called immediately before any of the
+ * three destructive branches (archive-wipe, grace-transition-wipe, hard delete) act on that
+ * snapshot. A concurrent owner `PATCH endsAt` (or a concurrent owner `DELETE`) between the read
+ * and this check changes `meta`'s ETag, so `assertGroupMetaUnchanged` reports "conflict" and
+ * the caller skips the row entirely — narrowing the race window from "the whole row's
+ * processing" down to a single conditional write, the same residual any other ETag-guarded
+ * operation in this codebase already accepts.
+ */
+async function verifyStillCurrent(
+  groupId: string,
+  meta: GroupMeta,
+  deps: Pick<SweepGroupsDeps, "groupRepo">,
+): Promise<boolean> {
+  if (!meta.etag) {
+    // Should never happen — every real getGroupMeta read populates it — but failing loud
+    // beats silently skipping the safety check this function exists to perform.
+    throw new Error(`GroupMeta for ${groupId} has no ETag — cannot safely verify freshness before a destructive sweep action`);
+  }
+  const outcome = await deps.groupRepo.assertGroupMetaUnchanged(groupId, meta.etag);
+  return outcome === "ok";
+}
+
 async function processRow(
   bucketDate: string,
   groupId: string,
@@ -135,6 +170,10 @@ async function processRow(
   }
 
   if (state === "archived") {
+    if (!(await verifyStillCurrent(groupId, meta, deps))) {
+      result.skipped.push(groupId);
+      return;
+    }
     // 002 §4.1 step 5 — archive: kill locations + joinability, keep the memento, never revisit.
     await wipeGroupLocationsAndCode(meta, deps);
     await deps.groupExpiryRepo.deleteExpiryRow(bucketDate, groupId);
@@ -143,6 +182,10 @@ async function processRow(
   }
 
   if (state === "ended") {
+    if (!(await verifyStillCurrent(groupId, meta, deps))) {
+      result.skipped.push(groupId);
+      return;
+    }
     // 002 §4.1 step 4 (grace, first half) — locations + joinability die now; the group itself
     // survives until graceUntil, so re-bucket the row forward with action "hardDelete".
     await wipeGroupLocationsAndCode(meta, deps);
@@ -157,6 +200,10 @@ async function processRow(
 
   // state === "expired" — either delete-policy at endsAt, or grace-policy at graceUntil
   // (002 §4.1 steps 3 / 4 second half): full hard delete, expiry row last.
+  if (!(await verifyStillCurrent(groupId, meta, deps))) {
+    result.skipped.push(groupId);
+    return;
+  }
   await hardDeleteGroupFootprint(meta, deps);
   await deps.groupExpiryRepo.deleteExpiryRow(bucketDate, groupId);
   result.hardDeleted.push(groupId);
@@ -174,6 +221,7 @@ export async function sweepGroups(deps: SweepGroupsDeps): Promise<SweepGroupsRes
     graceTransitioned: [],
     archived: [],
     hardDeleted: [],
+    skipped: [],
     errors: [],
   };
 

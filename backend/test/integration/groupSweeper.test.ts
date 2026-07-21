@@ -230,4 +230,55 @@ describe("integration/groupSweeper — bucket walk + physical deletion against r
     // The group itself is untouched — only its index row moved.
     expect(await deps.groupRepo.getGroupMeta(seeded.meta.groupId)).not.toBeNull();
   }, 30_000);
+
+  it("SECURITY: TOCTOU race — a concurrent owner PATCH-extend landing between the sweeper's read and its delete is detected via a REAL ETag conflict, and the row is skipped, not deleted", async () => {
+    const now = new Date("2026-07-21T10:00:00Z");
+    const deps = buildRealDeps(now);
+    const endsAt = "2026-07-21T09:00:00Z"; // already past -> due for hard delete
+    const seeded = await seedGroup(deps, { endsAt, expiryPolicy: "delete" }, { extraMembers: 1, withLocation: true });
+    const bucket = endsAt.slice(0, 10);
+    await seedExpiryRow(deps, bucket, seeded.meta.groupId);
+
+    // Capture the ETag exactly as the sweeper's own processRow does.
+    const snapshot = await deps.groupRepo.getGroupMeta(seeded.meta.groupId);
+    expect(snapshot?.etag).toBeTruthy();
+
+    // Simulate the concurrent owner PATCH landing AFTER the sweeper's read but BEFORE its
+    // final delete call — a REAL updateEntity against Azurite, which genuinely rotates the
+    // row's ETag server-side (not a fake/simulated token).
+    const extendedEndsAt = "2026-08-21T00:00:00Z";
+    await deps.groupRepo.updateGroupMeta(seeded.meta.groupId, { endsAt: extendedEndsAt });
+
+    // The sweeper's own conditional check, using the NOW-STALE captured ETag, must report a
+    // genuine 412/404-mapped conflict from real Azurite — proving the precondition is
+    // actually enforced server-side, not just by in-memory bookkeeping.
+    const outcome = await deps.groupRepo.assertGroupMetaUnchanged(seeded.meta.groupId, snapshot!.etag!);
+    expect(outcome).toBe("conflict");
+
+    // End to end: re-run sweepGroups with a getGroupMeta wrapper that reproduces the exact
+    // race (returns the sweeper's stale snapshot after the concurrent update has already
+    // committed for real), confirming the full pipeline skips rather than deletes.
+    const realGetGroupMeta = deps.groupRepo.getGroupMeta.bind(deps.groupRepo);
+    let raceInjected = false;
+    deps.groupRepo.getGroupMeta = async (groupId: string) => {
+      if (groupId === seeded.meta.groupId && !raceInjected) {
+        raceInjected = true;
+        return snapshot; // the sweeper acts on the pre-extend snapshot it already "read"
+      }
+      return realGetGroupMeta(groupId);
+    };
+
+    const result = await sweepGroups(deps);
+
+    expect(result.skipped).toContain(seeded.meta.groupId);
+    expect(result.hardDeleted).not.toContain(seeded.meta.groupId);
+    expect(result.errors).toEqual([]);
+
+    // The group survives, fully intact, with the real concurrent extend actually applied.
+    const survivingMeta = await realGetGroupMeta(seeded.meta.groupId);
+    expect(survivingMeta?.endsAt).toBe(extendedEndsAt);
+    expect(await deps.groupRepo.listMembers(seeded.meta.groupId)).toHaveLength(2);
+    expect(await deps.groupCodeRepo.getCode(seeded.meta.code)).not.toBeNull();
+    expect(await deps.groupLastKnownRepo.listByGroup(seeded.meta.groupId)).toHaveLength(1);
+  }, 30_000);
 });

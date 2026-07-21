@@ -1,14 +1,21 @@
-import type { GroupMember, GroupMeta, GroupRepo } from "../../src/ports/repositories";
+import { randomUUID } from "node:crypto";
+import type { GroupMember, GroupMeta, GroupMetaAssertOutcome, GroupRepo } from "../../src/ports/repositories";
 
 export class InMemoryGroupRepo implements GroupRepo {
   private readonly meta = new Map<string, GroupMeta>();
   private readonly members = new Map<string, Map<string, GroupMember>>();
 
+  private freshEtag(): string {
+    // Simulates Table Storage's ETag rotation: every successful write to the `meta` row
+    // (create, patch/rotate, or B12's no-op conditional touch) gets a brand-new token.
+    return `etag-${randomUUID()}`;
+  }
+
   async createGroupMeta(meta: GroupMeta): Promise<void> {
     if (this.meta.has(meta.groupId)) {
       throw new Error(`InMemoryGroupRepo: group ${meta.groupId} already exists`);
     }
-    this.meta.set(meta.groupId, { ...meta });
+    this.meta.set(meta.groupId, { ...meta, etag: this.freshEtag() });
     this.members.set(meta.groupId, new Map());
   }
 
@@ -43,7 +50,7 @@ export class InMemoryGroupRepo implements GroupRepo {
     if (!existing) {
       throw new Error(`InMemoryGroupRepo: no group ${groupId}`);
     }
-    const updated = { ...existing, ...patch };
+    const updated = { ...existing, ...patch, etag: this.freshEtag() };
     this.meta.set(groupId, updated);
     return { ...updated };
   }
@@ -54,6 +61,16 @@ export class InMemoryGroupRepo implements GroupRepo {
 
   async removeMember(groupId: string, userId: string): Promise<void> {
     this.members.get(groupId)?.delete(userId);
+  }
+
+  async assertGroupMetaUnchanged(groupId: string, etag: string): Promise<GroupMetaAssertOutcome> {
+    const current = this.meta.get(groupId);
+    if (!current || current.etag !== etag) {
+      return "conflict";
+    }
+    // Mirrors the real adapter's no-op conditional merge: succeeding still rotates the ETag.
+    this.meta.set(groupId, { ...current, etag: this.freshEtag() });
+    return "ok";
   }
 
   /**
