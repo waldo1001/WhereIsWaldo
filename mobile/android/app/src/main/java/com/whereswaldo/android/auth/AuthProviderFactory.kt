@@ -19,9 +19,9 @@ enum class AuthMode {
  * Picks the [AuthProvider] implementation for the current build (specs/003 §7, §13).
  * [firebaseAuthProvider] is a **lazy** supplier, invoked only when [mode] is [AuthMode.Firebase] —
  * this keeps this factory (and its test) pure-JVM: [com.whereswaldo.android.AppContainer] (the
- * only real caller) passes `{ FirebaseAuthProvider(FirebaseAuth.getInstance()) }`, so
- * `FirebaseAuth.getInstance()` is only ever reached on a real device/emulator, never from a unit
- * test or an `insecure-local` build.
+ * only real caller) passes `{ FirebaseAuthProvider(FirebaseAuth.getInstance(), activityProvider) }`,
+ * so `FirebaseAuth.getInstance()` is only ever reached on a real device/emulator, never from a
+ * unit test or an `insecure-local` build.
  */
 object AuthProviderFactory {
     fun create(mode: AuthMode, firebaseProjectId: String, firebaseAuthProvider: () -> AuthProvider): AuthProvider =

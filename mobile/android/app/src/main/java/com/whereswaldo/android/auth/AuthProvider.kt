@@ -1,13 +1,17 @@
 package com.whereswaldo.android.auth
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Abstraction over the Firebase Auth ID-token source (specs/003-android-client.md §7).
- * [FirebaseAuthProvider] is the real, H1-wired implementation; [DevAuthProvider] is the A1 dev/
- * stub implementation used when `BuildConfig.AUTH_MODE == "insecure-local"`.
+ * Abstraction over the phone-number Firebase Auth ID-token source (specs/006-phone-auth.md,
+ * specs/003-android-client.md §7). [FirebaseAuthProvider] is the real implementation (H2-wired:
+ * on-device SMS verification needs the Firebase console phone-auth setup); [DevAuthProvider] is
+ * the dev/stub implementation used when `BuildConfig.AUTH_MODE == "insecure-local"`.
  *
- * Pure Kotlin/JVM — no `android.*` import — unit-testable without an emulator.
+ * Pure Kotlin/JVM — no `android.*` import — unit-testable without an emulator. The former
+ * email/password shape (`signIn(email, password)`, `AuthSignInException`) is deleted entirely —
+ * phone-number sign-in (SMS one-time code) is the only way into the app (006 §1).
  */
 interface AuthProvider {
     val authState: StateFlow<AuthState>
@@ -23,16 +27,34 @@ interface AuthProvider {
     suspend fun signOut()
 
     /**
-     * Email/password sign-in (specs/003 §7). On success, [authState] transitions to
-     * [AuthState.SignedIn] — callers (e.g. `WaldoNavHost`) observe that directly rather than
-     * relying on this function's return. Throws [AuthSignInException] on failure.
+     * Starts SMS verification for [phoneNumberE164] (already normalized per 006 §3 —
+     * `PhoneNumberNormalizer`; this function never re-rejects malformed input, callers MUST
+     * normalize first). Calling this again with the **same number** while a verification is
+     * already in flight is a resend — the provider reuses its internal resend token internally;
+     * that session state (`verificationId`, `ForceResendingToken`) is provider-internal and MUST
+     * NOT cross this interface (006 §4.1).
      */
-    suspend fun signIn(email: String, password: String)
+    fun startPhoneVerification(phoneNumberE164: String): Flow<PhoneVerificationEvent>
+
+    /**
+     * Confirms the SMS code for the provider-tracked in-flight verification. On success,
+     * [authState] flips to [AuthState.SignedIn] — callers (e.g. `WaldoNavHost`) observe that
+     * directly rather than relying on this function's return. Throws [PhoneAuthException] on
+     * failure.
+     */
+    suspend fun confirmCode(code: String)
 }
 
-/**
- * A sign-in failure, already mapped to a user-facing [message] — never the raw Firebase SDK/
- * server text (docs/security-review-checklist.md's "no raw error text" principle, mirrored from
- * `network/ApiErrorUserMessage.kt`).
- */
-class AuthSignInException(message: String) : Exception(message)
+/** The closed 006 §4.1 sign-in-flow event set emitted by [AuthProvider.startPhoneVerification]. */
+sealed interface PhoneVerificationEvent {
+    /** The SMS was sent; the caller should move to code entry. */
+    data object CodeSent : PhoneVerificationEvent
+
+    /** Android-only instant verification / SMS auto-retrieval (006 §4.3): the provider already
+     * completed sign-in without any code being typed — `authState` has already flipped to
+     * `SignedIn` by the time this is emitted. May arrive while still `SendingCode` **or** after
+     * already reaching `EnteringCode` (both are mandatory transitions, 006 §4.1). */
+    data object Completed : PhoneVerificationEvent
+
+    data class Failed(val error: PhoneAuthError) : PhoneVerificationEvent
+}
