@@ -2,19 +2,24 @@
 // Azure/Google imports. Full-document replace with optimistic concurrency: If-Match is
 // REQUIRED ("0" sentinel for the very first write); a stale/mismatched value maps storage's
 // 412 to 409 GEOFENCE_VERSION_CONFLICT (002 §3.4). Side effect on success: GEOFENCE_CONFIG_CHANGED
-// push (§8.4) to every family device (best-effort, silent on failure — §10).
+// push (§8.4) to every family device (best-effort, silent on failure — §10). Devices are
+// keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): the fan-out is the family
+// roster plus one small per-member Devices partition scan each
+// (src/domain/family/deviceFanout.ts).
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, replaceGeofencesRequestSchema } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { DeviceRepo, EntitlementsRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { DeviceRepo, EntitlementsRepo, FamilyRepo, Role, UsageRepo } from "../../ports/repositories";
 import type { GeofenceConfigDocument, GeofenceConfigRepo, GeofenceEntry } from "../../ports/geofenceConfig";
 import type { PushSender } from "../../ports/pushSender";
+import { listDevicesForMembers } from "../family/deviceFanout";
 import { getFeatures, type Features } from "../plan";
 
 export interface ReplaceGeofencesDeps {
   geofenceConfigRepo: GeofenceConfigRepo;
   deviceRepo: DeviceRepo;
+  familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
   usageRepo: UsageRepo;
   pushSender: PushSender;
@@ -115,7 +120,8 @@ export async function replaceGeofences(
   const now = deps.clock.now();
   await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
-  const devices = await deps.deviceRepo.listDevices(familyId);
+  const members = await deps.familyRepo.listMembers(familyId);
+  const devices = await listDevicesForMembers(members, deps.deviceRepo);
   for (const device of devices) {
     if (!device.pushToken || device.pushInvalid) continue;
     try {
@@ -125,7 +131,8 @@ export async function replaceGeofences(
         data: { type: "GEOFENCE_CONFIG_CHANGED", etag: outcome.etag },
       });
       if (sendOutcome === "invalidToken") {
-        await deps.deviceRepo.putDevice(familyId, { ...device, pushInvalid: true });
+        // Write back into the DEVICE OWNER's own partition (002 §2.4).
+        await deps.deviceRepo.putDevice(device.ownerUserId, { ...device, pushInvalid: true });
       }
     } catch {
       // Fan-out is silent/best-effort (§10 PUSH_DELIVERY_FAILED note) — never fails the request.

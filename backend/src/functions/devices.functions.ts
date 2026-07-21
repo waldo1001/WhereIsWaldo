@@ -53,7 +53,7 @@ app.http("registerDevice", {
       const body: unknown = await request.json().catch(() => ({}));
       const result = await registerDevice(
         { uid: auth.uid, familyId: auth.familyId, body },
-        { deviceRepo, entitlementsRepo, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, clock },
       );
       return {
         status: result.created ? 201 : 200,
@@ -96,7 +96,7 @@ app.http("patchDeviceSettings", {
       const body: unknown = await request.json().catch(() => ({}));
       const result = await patchDeviceSettings(
         { uid: auth.uid, familyId: auth.familyId, role: auth.role, deviceId, body },
-        { deviceRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
       );
       return { status: 200, jsonBody: ok(result.device, result.features) };
     } catch (err) {

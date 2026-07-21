@@ -4,15 +4,27 @@
 // (with geofenceName/lat/lon/radiusM frozen from the current config, or null when the
 // geofenceId is unknown/stale) regardless of notification flags; the GEOFENCE_EVENT push
 // (§8.2) fans out to every other family device only when the matching geofence's
-// notifyOnEnter/notifyOnExit flag for this transition is true (§7.1/§8.2).
+// notifyOnEnter/notifyOnExit flag for this transition is true (§7.1/§8.2). Devices are
+// keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): the fan-out is one small
+// partition scan per family member (src/domain/family/deviceFanout.ts), lazily fetched and
+// cached at most once per batch, same as the pre-existing displayName caching.
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, reportGeofenceEventsRequestSchema } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { DeviceRecord, DeviceRepo, EntitlementsRepo, FamilyRepo, IdempotencyRepo, UsageRepo } from "../../ports/repositories";
+import type {
+  DeviceRecord,
+  DeviceRepo,
+  EntitlementsRepo,
+  FamilyMember,
+  FamilyRepo,
+  IdempotencyRepo,
+  UsageRepo,
+} from "../../ports/repositories";
 import type { EventLine, HistoryStore } from "../../ports/historyStore";
 import type { GeofenceConfigRepo, GeofenceEntry } from "../../ports/geofenceConfig";
 import type { PushSender } from "../../ports/pushSender";
+import { listDevicesForMembers } from "../family/deviceFanout";
 import { getFeatures, type Features } from "../plan";
 
 export interface ReportGeofenceEventsDeps {
@@ -65,8 +77,7 @@ function titleFor(displayName: string, geofenceName: string, transition: "enter"
     : `${displayName} left ${geofenceName}`;
 }
 
-async function resolveDisplayName(uid: string, familyId: string, deps: ReportGeofenceEventsDeps): Promise<string> {
-  const members = await deps.familyRepo.listMembers(familyId);
+function resolveDisplayName(uid: string, members: FamilyMember[]): string {
   const member = members.find((m) => m.userId === uid);
   return member?.displayName ?? uid;
 }
@@ -91,7 +102,9 @@ export async function reportGeofenceEvents(
   }
   const deviceId = input.deviceId;
 
-  const device = await deps.deviceRepo.getDevice(familyId, deviceId);
+  // §1.2 ownership check: a point read in the caller's own partition (002 §2.4) — no
+  // family fan-out needed, since a device can only ever live in its owner's partition.
+  const device = await deps.deviceRepo.getDevice(input.uid, deviceId);
   if (!device || device.ownerUserId !== input.uid) {
     throw new AppError("DEVICE_NOT_FOUND", "X-Device-Id is not registered to the calling user");
   }
@@ -116,6 +129,7 @@ export async function reportGeofenceEvents(
 
   let accepted = 0;
   let duplicates = 0;
+  let members: FamilyMember[] | null = null;
   let displayName: string | null = null;
   let familyDevices: DeviceRecord[] | null = null;
 
@@ -144,11 +158,14 @@ export async function reportGeofenceEvents(
     await deps.historyStore.appendEvent(familyId, eventLine);
 
     if (matched && notifyFlagFor(matched, event.transition)) {
+      if (members === null) {
+        members = await deps.familyRepo.listMembers(familyId);
+      }
       if (displayName === null) {
-        displayName = await resolveDisplayName(input.uid, familyId, deps);
+        displayName = resolveDisplayName(input.uid, members);
       }
       if (familyDevices === null) {
-        familyDevices = await deps.deviceRepo.listDevices(familyId);
+        familyDevices = await listDevicesForMembers(members, deps.deviceRepo);
       }
       const title = titleFor(displayName, matched.name, event.transition);
       for (const target of familyDevices) {
@@ -170,7 +187,8 @@ export async function reportGeofenceEvents(
             },
           });
           if (outcome === "invalidToken") {
-            await deps.deviceRepo.putDevice(familyId, { ...target, pushInvalid: true });
+            // Write back into the DEVICE OWNER's own partition (002 §2.4).
+            await deps.deviceRepo.putDevice(target.ownerUserId, { ...target, pushInvalid: true });
           }
         } catch {
           // Fan-out is silent/best-effort (§10 PUSH_DELIVERY_FAILED note) — never fails the request.

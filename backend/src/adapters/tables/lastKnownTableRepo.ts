@@ -1,5 +1,5 @@
-// specs/002 §2.5 `LastKnown` table. Integration-tested later; no unit tests here (thin
-// adapter, excluded from mutation).
+// specs/002 §2.5 `LastKnown` table — keyed by owner (B8 re-key). Integration-tested later;
+// no unit tests here (thin adapter, excluded from mutation).
 
 import { odata, RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
@@ -35,9 +35,9 @@ function toRecord(deviceId: string, entity: Record<string, unknown>): LastKnownR
 export class TableLastKnownRepo implements LastKnownRepo {
   private readonly client = createTableClient("LastKnown");
 
-  async get(familyId: string, deviceId: string): Promise<LastKnownRecord | null> {
+  async get(ownerUserId: string, deviceId: string): Promise<LastKnownRecord | null> {
     try {
-      const entity = await this.client.getEntity(familyId, `${DEVICE_PREFIX}${deviceId}`);
+      const entity = await this.client.getEntity(ownerUserId, `${DEVICE_PREFIX}${deviceId}`);
       return toRecord(deviceId, entity);
     } catch (err) {
       if (isNotFound(err)) return null;
@@ -45,12 +45,12 @@ export class TableLastKnownRepo implements LastKnownRepo {
     }
   }
 
-  async upsertIfNewer(familyId: string, record: LastKnownRecord): Promise<boolean> {
+  async upsertIfNewer(ownerUserId: string, record: LastKnownRecord): Promise<boolean> {
     const rowKey = `${DEVICE_PREFIX}${record.deviceId}`;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       let existingEtag: string | undefined;
       try {
-        const entity = await this.client.getEntity(familyId, rowKey);
+        const entity = await this.client.getEntity(ownerUserId, rowKey);
         if (new Date(String(entity.recordedAt)).getTime() >= new Date(record.recordedAt).getTime()) {
           return false; // stored is already the same age or newer.
         }
@@ -60,7 +60,7 @@ export class TableLastKnownRepo implements LastKnownRepo {
       }
 
       const entity = {
-        partitionKey: familyId,
+        partitionKey: ownerUserId,
         rowKey,
         lat: record.lat,
         lon: record.lon,
@@ -91,11 +91,11 @@ export class TableLastKnownRepo implements LastKnownRepo {
     return false;
   }
 
-  async listByFamily(familyId: string): Promise<LastKnownRecord[]> {
+  async listByOwner(ownerUserId: string): Promise<LastKnownRecord[]> {
     const records: LastKnownRecord[] = [];
     const entities = this.client.listEntities({
       queryOptions: {
-        filter: odata`PartitionKey eq ${familyId} and RowKey ge ${DEVICE_PREFIX} and RowKey lt ${"device;"}`,
+        filter: odata`PartitionKey eq ${ownerUserId} and RowKey ge ${DEVICE_PREFIX} and RowKey lt ${"device;"}`,
       },
     });
     for await (const entity of entities) {

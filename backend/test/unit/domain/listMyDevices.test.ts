@@ -64,11 +64,11 @@ async function seedFamily(deps: ReturnType<typeof buildDeps>) {
 }
 
 describe("domain/device/listMyDevices", () => {
-  it("lists every family member's devices with ownerDisplayName + lastSeenAt (§4.2 open-family shape)", async () => {
+  it("lists every family member's devices with ownerDisplayName + lastSeenAt (§4.2 open-family shape, fanned out per-member per 002 §2.4)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
-    deps.deviceRepo.seed(FAMILY_ID, baseDevice({ deviceId: "device-1", ownerUserId: "u1" }));
-    deps.deviceRepo.seed(FAMILY_ID, baseDevice({ deviceId: "device-2", ownerUserId: "u2", model: "iPhone" }));
+    deps.deviceRepo.seed("u1", baseDevice({ deviceId: "device-1", ownerUserId: "u1" }));
+    deps.deviceRepo.seed("u2", baseDevice({ deviceId: "device-2", ownerUserId: "u2", model: "iPhone" }));
 
     const result = await listMyDevices({ uid: "u1", familyId: FAMILY_ID }, deps);
 
@@ -86,7 +86,7 @@ describe("domain/device/listMyDevices", () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(
-      FAMILY_ID,
+      "u1",
       baseDevice({ deviceId: "device-1", ownerUserId: "u1", pushToken: "secret-token", locationPushToken: "secret-loc" }),
     );
 
@@ -94,6 +94,19 @@ describe("domain/device/listMyDevices", () => {
 
     expect(result.devices[0]).not.toHaveProperty("pushToken");
     expect(result.devices[0]).not.toHaveProperty("locationPushToken");
+  });
+
+  it("does not leak one member's devices into another family's listing (per-owner partition isolation, 002 §2.4)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    // A device registered to some unrelated user who is NOT in this family — must never
+    // appear, since fan-out only ever visits THIS family's roster partitions.
+    deps.deviceRepo.seed("stranger", baseDevice({ deviceId: "stranger-device", ownerUserId: "stranger" }));
+    deps.deviceRepo.seed("u1", baseDevice({ deviceId: "device-1", ownerUserId: "u1" }));
+
+    const result = await listMyDevices({ uid: "u1", familyId: FAMILY_ID }, deps);
+
+    expect(result.devices.map((d) => d.deviceId)).toEqual(["device-1"]);
   });
 
   it("records usage metric apiCalls under the familyId for a family member", async () => {

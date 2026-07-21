@@ -1,5 +1,5 @@
-// specs/002 §2.4 `Devices` table. Integration-tested later; no unit tests here (thin
-// adapter, excluded from mutation).
+// specs/002 §2.4 `Devices` table — keyed by owner (B8 re-key). Integration-tested later;
+// no unit tests here (thin adapter, excluded from mutation).
 
 import { odata, RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
@@ -32,9 +32,9 @@ function toRecord(deviceId: string, entity: Record<string, unknown>): DeviceReco
 export class TableDeviceRepo implements DeviceRepo {
   private readonly client = createTableClient("Devices");
 
-  async getDevice(familyId: string, deviceId: string): Promise<DeviceRecord | null> {
+  async getDevice(ownerUserId: string, deviceId: string): Promise<DeviceRecord | null> {
     try {
-      const entity = await this.client.getEntity(familyId, `${DEVICE_PREFIX}${deviceId}`);
+      const entity = await this.client.getEntity(ownerUserId, `${DEVICE_PREFIX}${deviceId}`);
       return toRecord(deviceId, entity);
     } catch (err) {
       if (isNotFound(err)) return null;
@@ -42,10 +42,10 @@ export class TableDeviceRepo implements DeviceRepo {
     }
   }
 
-  async putDevice(familyId: string, device: DeviceRecord): Promise<void> {
+  async putDevice(ownerUserId: string, device: DeviceRecord): Promise<void> {
     await this.client.upsertEntity(
       {
-        partitionKey: familyId,
+        partitionKey: ownerUserId,
         rowKey: `${DEVICE_PREFIX}${device.deviceId}`,
         ownerUserId: device.ownerUserId,
         platform: device.platform,
@@ -64,11 +64,11 @@ export class TableDeviceRepo implements DeviceRepo {
     );
   }
 
-  async listDevices(familyId: string): Promise<DeviceRecord[]> {
+  async listDevices(ownerUserId: string): Promise<DeviceRecord[]> {
     const devices: DeviceRecord[] = [];
     const entities = this.client.listEntities({
       queryOptions: {
-        filter: odata`PartitionKey eq ${familyId} and RowKey ge ${DEVICE_PREFIX} and RowKey lt ${"device;"}`,
+        filter: odata`PartitionKey eq ${ownerUserId} and RowKey ge ${DEVICE_PREFIX} and RowKey lt ${"device;"}`,
       },
     });
     for await (const entity of entities) {
@@ -78,17 +78,15 @@ export class TableDeviceRepo implements DeviceRepo {
     return devices;
   }
 
-  async countDevices(familyId: string): Promise<number> {
-    const devices = await this.listDevices(familyId);
+  async countDevices(ownerUserId: string): Promise<number> {
+    const devices = await this.listDevices(ownerUserId);
     return devices.length;
   }
 
-  async deleteDevicesByOwner(familyId: string, userId: string): Promise<void> {
-    const devices = await this.listDevices(familyId);
-    await Promise.all(
-      devices
-        .filter((device) => device.ownerUserId === userId)
-        .map((device) => this.client.deleteEntity(familyId, `${DEVICE_PREFIX}${device.deviceId}`)),
-    );
+  async deleteDevicesByOwner(ownerUserId: string): Promise<void> {
+    // Every row in this partition belongs to ownerUserId by construction (002 §2.4) — no
+    // per-row filter needed, just wipe the whole partition.
+    const devices = await this.listDevices(ownerUserId);
+    await Promise.all(devices.map((device) => this.client.deleteEntity(ownerUserId, `${DEVICE_PREFIX}${device.deviceId}`)));
   }
 }

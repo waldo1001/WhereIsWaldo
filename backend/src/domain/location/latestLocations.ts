@@ -1,5 +1,7 @@
 // specs/001 §5.2 — live map (latest location per family device). Pure domain logic: no
-// Azure/Google imports. Joins three single-partition scans in memory (specs/002 §2.5).
+// Azure/Google imports. Devices/LastKnown are keyed by ownerUserId (002 §2.4/§2.5, B8
+// re-key): one roster scan plus one small per-member Devices/LastKnown partition scan
+// each, parallelized (src/domain/family/deviceFanout.ts), joined in memory.
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
@@ -14,6 +16,7 @@ import type {
   UsageRepo,
 } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
+import { listDevicesForMembers, listLastKnownsForMembers } from "../family/deviceFanout";
 
 export interface LatestLocationsDeps {
   familyRepo: FamilyRepo;
@@ -112,10 +115,12 @@ export async function latestLocations(
   }
   const features = getFeatures(entitlements.subscriptionStatus);
 
-  const [members, devices, lastKnowns] = await Promise.all([
-    deps.familyRepo.listMembers(familyId),
-    deps.deviceRepo.listDevices(familyId),
-    deps.lastKnownRepo.listByFamily(familyId),
+  // Devices/LastKnown are keyed by ownerUserId, not familyId (002 §2.4/§2.5, B8 re-key):
+  // fan out one small partition scan per member instead of a single shared family scan.
+  const members = await deps.familyRepo.listMembers(familyId);
+  const [devices, lastKnowns] = await Promise.all([
+    listDevicesForMembers(members, deps.deviceRepo),
+    listLastKnownsForMembers(members, deps.lastKnownRepo),
   ]);
 
   const lastKnownByDevice = new Map(lastKnowns.map((record) => [record.deviceId, record]));

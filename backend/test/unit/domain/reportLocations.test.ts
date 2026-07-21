@@ -33,8 +33,10 @@ function buildDeps() {
   };
 }
 
+// specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId. Seeds
+// under the record's own ownerUserId partition (defaulting to USER_ID).
 function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<DeviceRecord> = {}): void {
-  deps.deviceRepo.seed(FAMILY_ID, {
+  const device: DeviceRecord = {
     deviceId: DEVICE_ID,
     ownerUserId: USER_ID,
     platform: "android",
@@ -47,7 +49,8 @@ function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<Devic
     registeredAt: "2026-07-01T00:00:00Z",
     lastSeenAt: "2026-07-01T00:00:00Z",
     ...overrides,
-  });
+  };
+  deps.deviceRepo.seed(device.ownerUserId, device);
 }
 
 function fix(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -104,7 +107,7 @@ describe("domain/location/reportLocations", () => {
 
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deviceRepo = new InMemoryDeviceRepo();
-    deviceRepo.seed(FAMILY_ID, {
+    deviceRepo.seed(USER_ID, {
       deviceId: DEVICE_ID,
       ownerUserId: USER_ID,
       platform: "android",
@@ -335,9 +338,31 @@ describe("domain/location/reportLocations", () => {
     await expectAppError(reportLocations(baseInput(), deps), "DEVICE_NOT_FOUND");
   });
 
-  it("throws DEVICE_NOT_FOUND when the device is registered to a different user", async () => {
+  it("throws DEVICE_NOT_FOUND when the device is registered to a different user (own-partition lookup finds nothing, 002 §2.4)", async () => {
     const deps = buildDeps();
     seedDevice(deps, { ownerUserId: "someone-else" });
+
+    await expectAppError(reportLocations(baseInput(), deps), "DEVICE_NOT_FOUND");
+  });
+
+  it("throws DEVICE_NOT_FOUND when the caller's own partition holds a mismatched-owner row (data-integrity defense-in-depth)", async () => {
+    const deps = buildDeps();
+    // Deliberately seeded under the CALLER's own partition (USER_ID) but with a different
+    // ownerUserId field — structurally shouldn't happen (every write keys by its own
+    // ownerUserId), kept as a belt-and-suspenders check.
+    deps.deviceRepo.seed(USER_ID, {
+      deviceId: DEVICE_ID,
+      ownerUserId: "someone-else",
+      platform: "android",
+      model: "Pixel 8",
+      appVersion: "1.0.0",
+      deviceName: "Pixel 8",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
 
     await expectAppError(reportLocations(baseInput(), deps), "DEVICE_NOT_FOUND");
   });
@@ -351,16 +376,10 @@ describe("domain/location/reportLocations", () => {
     });
   });
 
-  it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
-    const deps = buildDeps();
-
-    await expectAppError(reportLocations(baseInput({ familyId: null }), deps), "FAMILY_NOT_FOUND");
-  });
-
   it("last-known: does not update when the batch's newest fix is not newer than the stored one", async () => {
     const deps = buildDeps();
     seedDevice(deps);
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.lastKnownRepo.seed(USER_ID, {
       deviceId: DEVICE_ID,
       lat: 51.0,
       lon: 3.7,
@@ -382,7 +401,7 @@ describe("domain/location/reportLocations", () => {
     );
 
     expect(result.lastKnownUpdated).toBe(false);
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect(stored?.lat).toBe(51.0); // unchanged
   });
 
@@ -411,7 +430,7 @@ describe("domain/location/reportLocations", () => {
       deps,
     );
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect(stored?.lat).toBe(52.0);
     expect(stored?.recordedAt).toBe("2026-07-19T09:05:00Z");
   });
@@ -434,7 +453,7 @@ describe("domain/location/reportLocations", () => {
       deps,
     );
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect(stored?.lat).toBe(20); // the middle fix (09:05) is the newest of the three
   });
 
@@ -455,7 +474,7 @@ describe("domain/location/reportLocations", () => {
       deps,
     );
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect(stored?.lat).toBe(10); // first element kept; a `>=` bug would let the second replace it
   });
 
@@ -473,7 +492,7 @@ describe("domain/location/reportLocations", () => {
       deps,
     );
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect(stored?.altitudeM).toBe(8.0);
     expect(stored?.speedMps).toBe(1.5);
     expect(stored?.bearingDeg).toBe(90);
@@ -485,7 +504,7 @@ describe("domain/location/reportLocations", () => {
 
     await reportLocations(baseInput(), deps);
 
-    const stored = await deps.lastKnownRepo.get(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
     expect("altitudeM" in (stored as object)).toBe(false);
     expect("speedMps" in (stored as object)).toBe(false);
     expect("bearingDeg" in (stored as object)).toBe(false);
@@ -654,5 +673,89 @@ describe("domain/location/reportLocations", () => {
       "VALIDATION_FAILED",
       { fields: ["fixes[3].recordedAt"] },
     );
+  });
+
+  // specs/001 §1.5 step 4 / §5.1 — location reporting works WITHOUT a family (unlike §5.2/
+  // §6/§7), but history append is gated on having one (005 §3): a family-less user's fixes
+  // update last-known only, never durable history.
+  describe("family-less caller (001 §1.5 step 4, §5.1)", () => {
+    function familyLessInput(overrides: Record<string, unknown> = {}) {
+      return baseInput({ familyId: null, ...overrides });
+    }
+
+    it("accepts a batch: last-known updates, features implicit free, geofenceEtag '0' (no family config to sync)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+
+      const result = await reportLocations(familyLessInput(), deps);
+
+      expect(result.accepted).toBe(1);
+      expect(result.lastKnownUpdated).toBe(true);
+      expect(result.geofenceEtag).toBe("0");
+      expect(result.features).toEqual(getFeatures("free"));
+      const stored = await deps.lastKnownRepo.get(USER_ID, DEVICE_ID);
+      expect(stored?.lat).toBe(51.0543);
+    });
+
+    it("history gate: never appends to history for a family-less caller, even though last-known updates (005 §3)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+
+      await reportLocations(
+        familyLessInput({
+          body: {
+            batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+            fixes: [
+              fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" }),
+              fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:01:00Z" }),
+            ],
+          },
+        }),
+        deps,
+      );
+
+      expect(deps.historyStore.fixes).toEqual([]);
+    });
+
+    it("records usage under the caller's own uid, not a familyId (002 §2.9)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+
+      await reportLocations(familyLessInput(), deps);
+
+      expect(await deps.usageRepo.get(USER_ID, "apiCalls", "2026-07-19")).toBe(1);
+      expect(await deps.usageRepo.get(USER_ID, "locationBatches", "2026-07-19")).toBe(1);
+      expect(await deps.usageRepo.get(USER_ID, "fixes", "2026-07-19")).toBe(1);
+    });
+
+    it("still enforces TRACKING_PAUSED for a paused family-less device", async () => {
+      const deps = buildDeps();
+      seedDevice(deps, { trackingEnabled: false });
+
+      await expectAppError(reportLocations(familyLessInput(), deps), "TRACKING_PAUSED");
+    });
+
+    it("still enforces the §1.2 X-Device-Id ownership check for a family-less caller", async () => {
+      const deps = buildDeps();
+      seedDevice(deps, { ownerUserId: "someone-else" });
+
+      await expectAppError(reportLocations(familyLessInput(), deps), "DEVICE_NOT_FOUND");
+    });
+
+    it("batch idempotency still applies without a family", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      const body = {
+        batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+        fixes: [fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" })],
+      };
+
+      const first = await reportLocations(familyLessInput({ body }), deps);
+      expect(first.accepted).toBe(1);
+
+      const replay = await reportLocations(familyLessInput({ body }), deps);
+      expect(replay.accepted).toBe(0);
+      expect(replay.duplicates).toBe(1);
+    });
   });
 });
