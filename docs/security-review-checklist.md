@@ -32,13 +32,14 @@ Scope of review: the task's full diff (`git diff <merge-base>..<branch>`), all *
 
 ## 3. Backend code
 
-- **Auth guard everywhere.** Every new HTTP function goes through the specs/001 §1.5 guard; the only endpoints allowed for users without a family are §1.5.3's two. No route bypasses bearer verification.
+- **Auth guard everywhere.** Every new HTTP function goes through the specs/001 §1.5 guard; the only endpoints allowed for users without a **profile** are §1.5.3's four bootstrap ones, and family-scoped endpoints reject family-less callers per §1.5.4. No route bypasses bearer verification. Timer functions have no caller — verify they take no input and log no location payloads.
 - `AUTH_MODE=insecure-local` MUST refuse to run in Azure (`WEBSITE_INSTANCE_ID` check, specs/001 §2.3) — verify the check wasn't weakened, inverted, or made configurable.
 - **Validation before use.** All bodies/query/path/header inputs go through zod (`src/http/validate.ts`); no unvalidated value reaches storage or push adapters.
 - **Query injection.** Never string-concatenate user input into Table Storage OData `filter` expressions — use the SDK's escaping/`odata` template helper.
-- **Role & ownership checks** per specs/001 §1.6: parent-only mutations, `X-Device-Id` ownership, locate-poll requester-only.
+- **Role & ownership checks** per specs/001 §1.6: parent-only mutations, `X-Device-Id` ownership, locate-poll requester-only; group routes mask existence to non-members (`GROUP_NOT_FOUND`, specs/001 §12) and enforce owner-only controls.
+- **Group privacy invariants** (specs/005): `GroupLastKnown` rows and every §12 response carry position-only fields (no `deviceId`/`batteryPct`/`source`); the §5.1 history append is gated on the caller having a family; expired-group paths stay unreadable (lazy checks) and sweeper deletion covers every group artifact.
 - **No internal leakage.** Unhandled errors → generic `INTERNAL_ERROR`; no stack traces, storage errors, or dependency messages in response bodies.
-- **Privacy in logs.** This app handles children's location data: log IDs and counts, never coordinates or push tokens, at info level and above.
+- **Privacy in logs.** This app handles children's location data: log IDs and counts, never coordinates, push tokens, **or phone numbers**, at info level and above.
 - **Write-only tokens.** `pushToken`/`locationPushToken` never appear in any response (specs/001 §4.1).
 
 ## 4. Dependencies
@@ -50,4 +51,5 @@ Scope of review: the task's full diff (`git diff <merge-base>..<branch>`), all *
 
 - Firebase config files (`google-services.json`, `GoogleService-Info.plist`) stay untracked; signing material (keystores, certs, provisioning profiles) only via CI secrets, base64-encoded, never in the repo.
 - No hardcoded API base URLs pointing at third parties; TLS only; no cleartext-traffic exemptions.
-- Intent/deep-link inputs validated before use.
+- Intent/deep-link inputs validated before use (invite codes, `waldo://group-join` codes — pure normalization before any network call).
+- **Phone auth (specs/006):** no Firebase test phone number + OTP pairs committed anywhere (docs/tests use obviously fictional `+3247000000x` placeholders); phone numbers are PII consumed only by the Firebase SDK — never logged, never sent to our backend; the SMS region allowlist (azure-setup §3.4) is not widened and App Check registration is not weakened without explicit sign-off.

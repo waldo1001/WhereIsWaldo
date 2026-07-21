@@ -2,26 +2,26 @@
 
 > **For the next session picking this repo up: read this file, then `CLAUDE.md`, then the spec your task references. Everything you need is written down; if you find ambiguity, fix the spec first (specs/README.md).**
 
-## Status (2026-07-20)
+## Status (2026-07-21)
 
 | Area | State |
 |---|---|
-| Specs 000/001/002 | ✅ Complete and normative (product, full API contract, storage schema) |
+| Specs 000–006 | ✅ Complete and normative — product, full API contract, storage schema, both clients, **temporary groups (005)**, **phone-only auth (006)**. 001 error catalog is now 27 codes; new §12 group endpoints; 002 has 4 new group tables + the re-keyed `Devices`/`LastKnown`. |
 | Repo scaffold, CI workflows | ✅ **All 3 pipelines green on `main`** — `backend` (test+mutation+deploy), `android`, `ios` (see H1 CI entry below) |
-| Backend | ✅ **COMPLETE — B1–B6 all merged, deployed.** **328 unit tests, mutation 99.61%** (break 60), Azurite integration suite green. Every §11 checklist item covered. **Deployed to `func-whereiswaldo` via OIDC CI/CD.** |
-| Android / iOS | ✅ **Foundation + all feature screens merged** (A1/A2, I1/I2) — design-swappable layer (tokens→theme→stateless components), full 001 client, all screens (map/history/geofences/locate/settings/invites). **Now genuinely CI-verified**: `android-build` runs `./gradlew test` (108 tests green), `ios-package` runs `swift test` (126 tests green) on real toolchains — this is the first time either suite has actually executed (previously blocked by an AGP9 plugin conflict); 2 real bugs it surfaced are fixed (see H1 CI entry). |
+| Backend | ✅ B1–B6 merged & deployed (328 unit tests, mutation 99.61%, break 60, Azurite suite green, `func-whereiswaldo` via OIDC). 🟡 **New backlog from specs/005: B7–B12** (family-less profiles, per-user re-key, groups core/controls/locations, sweeper) — all `todo`. Phone auth (006) needs **zero** backend code. |
+| Android / iOS | ✅ Foundation + all family feature screens merged (A1/A2, I1/I2; 108 + 126 tests CI-green). 🟡 **New backlog: A3/I3 (phone sign-in, 006) + A4–A5/I4–I5 (groups client + screens, 005)** — all `todo`. Note: A3/I3 **replace** the email/password sign-in that H1 added on Android (spec'd deletion, 003 §7). |
 | web | ⬜ Not started (placeholder README) |
-| Azure/Firebase provisioning | 🟡 **Azure infra + OIDC CI/CD done** (this session, via az/gh CLI). **Firebase project + FCM + mobile config still human/secret steps** — see final report / `docs/azure-setup.md` §3. |
+| Azure/Firebase provisioning | 🟡 Azure infra + OIDC CI/CD done; Firebase project exists (`whereiswaldo-30e9c`). **Remaining console/secret steps moved to H2** (phone-auth setup per `docs/azure-setup.md` §3: Blaze, Phone provider, SMS region allowlist, test numbers, App Check, APNs key, FCM key, account reset). |
 
-## What's next (2026-07-20)
+## What's next (2026-07-21)
 
-Every backlog task B1–B6 / A1–A2 / I1–I2 is **merged**, and H1's infra/CI portion is done. The frontier is now the **remaining secret-bearing Firebase steps**, which only the user can perform:
+Specs 005 (temporary groups) + 006 (phone-only auth) are merged; the backlog below now has **12 coding tasks ready for `/dev-loop`** plus two human tasks:
 
-1. **Firebase (you, secrets):** create the Firebase project, enable Auth, generate the FCM service-account JSON, set it as the `FCM_SERVICE_ACCOUNT_JSON` app setting on `func-whereiswaldo`, and drop the real `google-services.json` / `GoogleService-Info.plist` into the (gitignored) mobile config slots. Exact commands are in the session's final report / `docs/azure-setup.md` §3 — never hand secret material to an agent to run for you.
-2. **Smoke-test** the deployed backend against a live endpoint (§11 smoke checklist) once Firebase is wired up (auth-guarded endpoints need a real token).
-3. Apply the **iOS Location Push entitlement** with Apple (000 §O1) — do this early, it has external lead time.
-4. Create the iOS `.xcodeproj` app-target project (specs/004 §1.1) — `WaldoKit` (the SPM package with all logic) is fully CI-tested; only the thin app-shell project is still a structure-check stub in `ios.yml`.
-5. ~~**Design pass:** feed `docs/design-prompt.md` to a design tool…~~ ✅ **Done (2026-07-20):** the "Waldo — Family Location Design System" tokens (`design/waldo-design-system/`) are applied to both apps' `DesignSystem` layers (colors light+dark, type scale, spacing, corners). Values only — no logic/component/screen changes; specs/003 §4.2 + specs/004 §2.1 updated.
+1. **Code (dev-loop):** `/dev-loop parallel 3` — immediately runnable: B7, A3, I3, A4, I4 (specs are normative; H1/H2 waived for coding, same precedent as A1/I1). Then B8/B9 → B10/B11 → B12, and A5/I5 behind their platform deps.
+2. **H2 (you, console/secrets):** Firebase phone-auth setup per `docs/azure-setup.md` §3 — Blaze + budget alert, Phone provider only, SMS region allowlist (BE/NL/FR/DE/LU), test phone numbers, App Check, APNs key, FCM service-account JSON, and the one-time account reset (006 §8). Coding doesn't block on this; **on-device sign-in and store builds do**.
+3. **Smoke-test** the deployed backend once H2 is done (001 §11 smoke checklist; fresh-user happy sign is now `PROFILE_NOT_FOUND`).
+4. Apply the **iOS Location Push entitlement** with Apple (000 §O1) — external lead time, apply early.
+5. Create the iOS `.xcodeproj` app-target project (specs/004 §1.1) — only the thin app-shell project is still a structure-check stub in `ios.yml`.
 6. Clear the **tech-debt** items listed under `## Dev-loop log` (apiCalls placement, error-log hardening, remaining integration tests).
 
 The detailed original B1 checklist is preserved below for reference.
@@ -73,11 +73,25 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 | B4 | Locate flow §6 + FCM adapter §8 | B2 | done |
 | B5 | Geofences §7 (config ETag flow, events, flag-filtered fan-out) | B2, B4 | done |
 | B6 | History §5.3/§7.4 (blob store read+cursor, completes B2's append-only historyBlobStore) + storage-adapter integration tests vs Azurite (002 §6) | B2 | done |
-| H1 | Run `docs/azure-setup.md` (Azure + Firebase + branch protection) | — | human |
+| H1 | Run `docs/azure-setup.md` (Azure + Firebase + branch protection). **Note (2026-07-21): the Firebase auth-provider portion is superseded by H2 (phone-only, specs/006); Azure/CI/branch-protection portions were done 2026-07-20.** | — | human |
 | A1 | Android: write `003-android-client.md` spec **first**, then Compose foundation — **swappable design-system layer** (tokens→Material3 theme→stateless components, light+dark), full 001 API client, Firebase-Auth abstraction (stubbed), device registration §4.1, nav scaffold, one proof screen, JUnit logic tests | B1 (H1 waived for coding) | done |
 | I1 | iOS: write `004-ios-client.md` spec first, then SwiftUI foundation — logic/design-system in a headless-testable **SPM package**, **swappable design-system layer** (tokens→theme→components, light+dark), full 001 API client, Firebase-Auth abstraction (stubbed), device registration §4.1, nav scaffold, one proof screen, `swift test` logic tests; **flag the Location Push entitlement application as a human/Apple task** | B1 (H1 waived for coding) | done |
 | A2 | Android feature screens on the design system: live map §5.2, history §5.3, geofences editor §7.1–7.2, locate-to-request §6, device/family settings §4.2–4.3/§3.5–3.6, invites §3.3–3.4 | A1 | done |
 | I2 | iOS feature screens on the design system: same inventory as A2 (§5.2, §5.3, §7.1–7.2, §6, §4.2–4.3/§3.5–3.6, §3.3–3.4) | I1 | done |
+| H2 | Firebase console phone-auth setup per `docs/azure-setup.md` §3 (specs/006 §6/§8): Blaze + budget alert, enable Phone / all other providers off, SMS region allowlist BE+NL+FR+DE+LU, test phone numbers (console-only), App Check (Play Integrity + SHA-256s → refreshed `google-services.json`; App Attest), APNs key upload, `FCM_SERVICE_ACCOUNT_JSON`, one-time account reset (delete legacy users + wipe test storage) | — | human |
+| A3 | Android phone sign-in (specs/006, 003 §7): new `AuthProvider` (`startPhoneVerification`/`confirmCode`), `FirebaseAuthProvider` rewrite + `CurrentActivityProvider`, phone-shaped `DevAuthProvider`, two-step `SignInStateHolder`/`SignInScreen`, `PhoneNumberNormalizer`, `PhoneAuthUserMessage`, **delete the email/password path**, full StateHolder-level tests (dev-mode complete without H2; on-device Firebase verification needs H2) | — | todo |
+| I3 | iOS phone sign-in (specs/006, 004 §4): `AuthProviding` extension + `PhoneAuthError`, phone-shaped `StubAuthProvider` **+ real unsigned-JWT dev token fix**, two-step `SignInViewModel`/`SignInScreen`, `PhoneNumberNormalizer`, `FirebaseAuthProvider` in the app target behind the RootView seam, `AppConfig.firebaseProjectId` (same H2 caveat as A3) | — | todo |
+| B7 | Family-less profiles (001 §1.5, §4.2–4.3): nullable `familyId`/`role` in `UserProfile`/`AuthContext`, `PROFILE_NOT_FOUND`, four-endpoint bootstrap allowance, family-less own-devices listing + full-field own-device PATCH | — | todo |
+| B8 | Re-key `Devices`+`LastKnown` to PK=`ownerUserId` (002 §2.4–2.5): adapters, per-member family reads (§4.2/§5.2/§6.1/§8 fan-out), per-user `maxDevices`, §3.6 cleanup, history-append-only-with-family gate (001 §5.1) | B7 | todo |
+| B9 | Groups core (001 §12.1–12.3 + §12.6; 002 §2.10–2.13): `Groups`/`GroupCodes`/`GroupExpiry` tables + `Users` `group:` reverse index, derived state + lazy expiry, 6 new error codes, PLAN_MATRIX group limits + `flags.groups`, owner-plan capacity rule | B7 | todo |
+| B10 | Group controls (001 §12.4–12.5, §12.7–12.9): patch (extend/reactivate/end-early), delete (inline hard delete), rotate, kick, leave + `GroupExpiry` row maintenance | B9 | todo |
+| B11 | Group live locations (001 §5.1 fan-out side effect, §12.10; 002 §2.12): ingest fan-out to `GroupLastKnown` (active-only, position-only, only-newer) + group latest endpoint with `isStale` | B8, B9 | todo |
+| B12 | Group sweeper (002 §4.1, §6): **first timer-triggered function**, 45-day bucket walk, per-policy physical deletion, idempotent re-run + Azurite integration tests | B10, B11 | todo |
+| H3 | Verify the deployed timer trigger fires on `func-whereiswaldo` after B12 (consumption-plan schedule locks use the host's `AzureWebJobsStorage`; check one logged run) | B12 | human |
+| A4 | Android groups client layer (003 §5/§6.1): `GroupsApi` port + DTOs (10 endpoints), 6 new error codes mapped + user messages (27 total) | — | todo |
+| A5 | Android groups screens (003 §12.2): list (= family-less home) / create (policy privacy copy) / detail + share code / join + `waldo://group-join` deep link / group map (position-only), nav additions | A3, A4 | todo |
+| I4 | iOS groups client layer (004 §3.1–3.2): WaldoKit client methods + DTOs (10 endpoints), 6 new `APIErrorCode` cases (27 total) | — | todo |
+| I5 | iOS groups screens (004 §3.4): same inventory as A5, `AppRoute` additions, deep-link parsing in WaldoKit | I3, I4 | todo |
 
 **Mobile H1-waiver (user directive, 2026-07-19):** the mobile clients code against **specs/001 (complete, normative)**, not the backend implementation, so they run now with H1 (Azure/Firebase provisioning) still `human`/pending. All H1-dependent runtime bits — real `google-services.json`/`GoogleService-Info.plist`, live backend base URL, real Firebase project — are **stubbed behind interfaces and gitignored**; wire them for real when H1 is done. No secrets committed. **Final deliverable (do LAST, after coding is maximized):** a design-generation prompt (`docs/design-prompt.md`) targeting each app's documented design-token contract, so a design tool can produce the iOS + Android visual design that drops into the swappable layer.
 
@@ -86,6 +100,8 @@ Status values: `todo` | `in-progress` | `review` | `done` | `blocked` | `human` 
 ## Dev-loop log
 
 *(appended by /dev-loop — newest first: date · task · agent rounds · review findings fixed · merge commit)*
+
+- **2026-07-21 · specs 005 + 006 authored (design session, spec-only)** — temporary groups (`specs/005`, commit `e6083b7`: 10 endpoints in 001 §12, 4 new tables + per-user `Devices`/`LastKnown` re-key in 002, derived lifecycle + first-ever timer sweeper, live-only/position-only privacy model) and phone-number-only auth (`specs/006`, commit `7da589f`: client-only change, provider-invisible tokens, Blaze/SMS-allowlist/App-Check ops posture, one-time account reset). Product decisions locked in: groups ≤ 50 members / 5 active / 30 days / 7-day grace; SMS allowlist BE+NL+FR+DE+LU; group map position-only; number change = new account. This entry's commit also lands the docs pass: azure-setup §3 rewritten as H2's phone-auth checklist, security checklist gains phone/group items, and the backlog above gains H2/H3 + B7–B12 + A3–A5 + I3–I5.
 
 - **2026-07-20 · Firebase project ID wired up** — user created the Firebase project (console name "WhereIsWaldo", auto-generated **Project ID `whereiswaldo-30e9c`** — confirmed via Project Settings → General, since Firebase's generated ID commonly differs from the typed display name). Set as the `FIREBASE_PROJECT_ID` app setting on `func-whereiswaldo` (not a secret — same value ships inside `google-services.json`/`GoogleService-Info.plist`, so no confirmation-before-acting concern here, unlike `FCM_SERVICE_ACCOUNT_JSON`). **Still pending (human/secret, docs/azure-setup.md §3):** enable Auth, register Android/iOS apps → `google-services.json`/`GoogleService-Info.plist`, generate + set `FCM_SERVICE_ACCOUNT_JSON`.
 

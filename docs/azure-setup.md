@@ -83,22 +83,30 @@ Then set **repository variables** (Settings → Secrets and variables → Action
 | `AZURE_SUBSCRIPTION_ID` | `az account show --query id -o tsv` |
 | `AZURE_FUNCTIONAPP_NAME` | `$FUNCAPP` |
 
-## 3. Firebase (auth + push)
+## 3. Firebase (phone-only auth + push) — task H2's runnable checklist
 
-1. Create a Firebase project (free Spark plan) at console.firebase.google.com; note the **project ID** → `FIREBASE_PROJECT_ID`.
-2. **Authentication:** enable Email/Password (and optionally Google sign-in).
-3. **Android app:** register package id (e.g. `be.wauters.whereswaldo`), download `google-services.json` → `mobile/android/app/` (gitignored).
-4. **iOS app:** register bundle id, download `GoogleService-Info.plist` → gitignored; upload the **APNs auth key** (from the Apple Developer account) into Firebase Cloud Messaging settings so FCM can route to APNs.
-5. **FCM sending credential** (the system's only stored key — specs/000 §O6): Project settings → Service accounts → *Generate new private key*, then:
+Normative requirements in specs/006 §6; this is the click-path. Sign-in is **phone-number-only** (specs/006) — there is no email/password step anymore.
+
+1. Create a Firebase project at console.firebase.google.com; note the **project ID** → `FIREBASE_PROJECT_ID`. *(Done 2026-07-20: `whereiswaldo-30e9c`.)*
+2. **Upgrade to the Blaze plan** (pay-as-you-go) — Phone Auth SMS sending requires it — and set a **Cloud Billing budget alert** (e.g. €5/month). Cost reality: SMS verifications bill per message (~US$0.01 US, ~US$0.06+ Belgium/EU); sign-ins are rare (Firebase refresh tokens keep a device signed in until sign-out/uninstall), so family-scale cost is cents/month — the "few euros/month" target is unaffected. The region allowlist (step 4) is the cost/abuse guardrail.
+3. **Authentication → Sign-in method: enable Phone.** Email/Password and every other provider stay **disabled** (specs/006 §1).
+4. **Authentication → Settings → SMS region policy → Allow-list: BE, NL, FR, DE, LU.** This is the primary SMS-pumping / toll-fraud mitigation — add a country only when a real user actually has a number there, never preemptively.
+5. **Test phone numbers** (Authentication → Sign-in method → Phone → "Phone numbers for testing"): add fictional numbers with fixed OTPs for dev/E2E/store review. The enabled number+code pairs live **only in the console** — an enabled test pair is a working credential; never commit one (docs/tests use obviously fictional `+3247000000x` placeholders). CI is unaffected (unit tests never touch Firebase; the placeholder `google-services.json` stays as-is).
+6. **App Check:** register both apps — Android: **Play Integrity** (requires the debug + release **SHA-256 fingerprints** on the Firebase Android app registration; re-download `google-services.json` afterwards); iOS: **App Attest** (DeviceCheck fallback). Leave enforcement for Authentication in **monitor** mode until both apps demonstrably sign in, then enforce (specs/006 §6.5).
+7. **Android app:** register package id (e.g. `be.wauters.whereswaldo`) **including the step-6 SHA-256s**, download `google-services.json` → `mobile/android/app/` (gitignored).
+8. **iOS app:** register bundle id, download `GoogleService-Info.plist` → gitignored; upload the **APNs auth key** (from the Apple Developer account) into Firebase Cloud Messaging settings. **The APNs key is a phone-auth prerequisite** (silent-push app verification, specs/006 §6.6), not just FCM routing — without it, on-device sign-in falls back to reCAPTCHA, which additionally needs the `REVERSED_CLIENT_ID` custom URL scheme in the app target's Info.plist. Simulator development uses test phone numbers (step 5) and needs neither.
+9. **FCM sending credential** (the system's only stored key — specs/000 §O6): Project settings → Service accounts → *Generate new private key*, then:
    ```bash
    az functionapp config appsettings set -n $FUNCAPP -g $RG \
      --settings FCM_SERVICE_ACCOUNT_JSON="$(cat serviceAccountKey.json | tr -d '\n')"
    ```
    Delete the local copy afterwards. Hardening backlog: GCP Workload Identity Federation trust to the Function App's managed identity → no stored key at all.
+10. **Account reset (one-time, pre-launch — specs/006 §8):** delete all users under Authentication → Users (they are email/password test accounts, unreachable once that provider is off), and wipe all test data in the storage account (all specs/002 §2 table rows and `history/`/`events/` blobs — deleting and recreating tables/containers is the fastest honest way).
 
 ## 4. Apple specifics (before iOS push-to-locate works properly)
 
 - Apple Developer Program ($99/yr) — needed for APNs at all.
+- The APNs auth key (§3.8) also gates **Firebase phone-auth app verification on device** (specs/006 §6.6) — simulator development works with test phone numbers instead.
 - **Apply for the Location Push Service Extension entitlement** (`com.apple.developer.location.push`) via developer.apple.com — justification: family locator app, user-initiated locates. This takes time; apply early (specs/000 §O1).
 
 ## 5. Branch protection (the mutation gate's teeth)
@@ -108,5 +116,5 @@ GitHub → Settings → Branches → protect `main`: require the status checks *
 ## 6. Verify
 
 1. Push any `backend/**` change to main → `backend` workflow: test → mutation → deploy all green.
-2. `curl https://$FUNCAPP.azurewebsites.net/api/v1/families/me -H "Authorization: Bearer <firebase-id-token>"` → JSON envelope (`FAMILY_NOT_FOUND` for a fresh user is the expected happy sign).
+2. Sign in on a dev build with a **test phone number** (§3.5), then `curl https://$FUNCAPP.azurewebsites.net/api/v1/families/me -H "Authorization: Bearer <that-session's-id-token>"` → JSON envelope (`PROFILE_NOT_FOUND` for a fresh user is the expected happy sign — specs/001 §1.5).
 3. Azure portal → Function App → confirm the **app's data-plane** settings are endpoint URLs only (`TABLES_ENDPOINT`/`BLOB_ENDPOINT`, no account keys) and storage reads succeed via managed identity. Expected and fine: `AzureWebJobsStorage` / `WEBSITE_CONTENT*` connection strings exist — those belong to the Functions *host* (created by `az functionapp create` on the consumption plan), not to the app's data access.
