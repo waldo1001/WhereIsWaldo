@@ -261,7 +261,15 @@ export interface GroupMeta {
   /** Current join code, denormalized for display (002 §2.10) — NOT the source of truth for
    * validity; that's GroupCodeRepo/GroupCodes (002 §2.11). */
   code: string;
+  /** Optimistic-concurrency token for the `meta` row (Table Storage ETag) — populated by a
+   * fresh `getGroupMeta` read so a caller that acts on that snapshot later (the sweeper, B12,
+   * 002 §4.1) can detect a concurrent mutation (e.g. an owner's `PATCH endsAt`) via
+   * `assertGroupMetaUnchanged` before doing anything destructive. Optional: absent wherever a
+   * `GroupMeta` is constructed as a WRITE input (create/patch results) rather than read fresh. */
+  etag?: string;
 }
+
+export type GroupMetaAssertOutcome = "ok" | "conflict";
 
 export interface GroupMember {
   userId: string;
@@ -290,6 +298,17 @@ export interface GroupRepo {
   /** Deletes one `member:{userId}` row — leave/kick/owner hard-delete (001 §12.5/§12.8/§12.9).
    * B10. Idempotent. */
   removeMember(groupId: string, userId: string): Promise<void>;
+  /**
+   * Security fix (B12, 002 §4.1 TOCTOU): a conditional no-op verification against the `meta`
+   * row's ETag. Succeeds ("ok") only if the row's current ETag still matches `etag` (the token
+   * a caller captured at their own earlier `getGroupMeta` read) — mutates nothing else. A
+   * mismatch, OR the row no longer existing at all, means `meta` was mutated or deleted
+   * concurrently since that read; both surface as `"conflict"`, never a thrown error, so the
+   * sweeper can skip the row for this run instead of acting on a stale snapshot. Mirrors
+   * `GeofenceConfigRepo.replace`'s outcome-union style (never throws on the precondition
+   * failure a stale caller is specifically trying to detect).
+   */
+  assertGroupMetaUnchanged(groupId: string, etag: string): Promise<GroupMetaAssertOutcome>;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +337,11 @@ export interface GroupCodeRepo {
 
 export type GroupExpiryAction = "expire" | "hardDelete";
 
+export interface GroupExpiryRow {
+  groupId: string;
+  action: GroupExpiryAction;
+}
+
 export interface GroupExpiryRepo {
   /** Writes the `{bucketDate}:{groupId}` row (002 §2.13) — bucket is the UTC date
    * (`yyyy-MM-dd`) of the group's next lifecycle action. */
@@ -327,6 +351,9 @@ export interface GroupExpiryRepo {
    * by design: the row may already be at a different bucket (a prior partial move or a sweeper
    * pass) — callers MUST tolerate this as a harmless no-op (002 §2.13's self-healing note). */
   deleteExpiryRow(bucketDate: string, groupId: string): Promise<void>;
+  /** Partition scan of one `{bucketDate}` bucket — the sweeper's bucket walk (002 §2.13/§4.1,
+   * B12): "a handful of tiny date-partition scans — never a full table scan." */
+  listByDate(bucketDate: string): Promise<GroupExpiryRow[]>;
 }
 
 // ---------------------------------------------------------------------------

@@ -73,6 +73,8 @@ describe("domain/group/createGroup", () => {
     const result = await createGroup({ uid: "u1", body: VALID_BODY }, deps);
 
     const meta = await deps.groupRepo.getGroupMeta(result.groupId);
+    // `etag` is the fake's simulated Table Storage concurrency token (B12 security fix,
+    // 002 §4.1 TOCTOU) — populated on every read, irrelevant to this test's assertion.
     expect(meta).toEqual({
       groupId: result.groupId,
       name: "Festival crew",
@@ -81,6 +83,7 @@ describe("domain/group/createGroup", () => {
       endsAt: VALID_ENDS_AT,
       expiryPolicy: "delete",
       code: result.code,
+      etag: expect.any(String),
     });
   });
 

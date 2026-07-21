@@ -17,6 +17,7 @@ import type {
   UsageRepo,
   UserRepo,
 } from "../../ports/repositories";
+import { hardDeleteGroupFootprint } from "./groupDeletion";
 
 export interface DeleteGroupDeps {
   groupRepo: GroupRepo;
@@ -58,19 +59,10 @@ export async function deleteGroup(input: DeleteGroupInput, deps: DeleteGroupDeps
     throw new AppError("AUTH_FORBIDDEN", "only the group owner may delete the group");
   }
 
-  // Same order as the sweeper's own hard-delete step (002 §4.1 step 3): read the roster
-  // first (needed for the reverse-index cleanup), then tear down the GroupLastKnown
-  // partition -> code -> members -> meta -> expiry row last.
-  const members = await deps.groupRepo.listMembers(input.groupId);
-  for (const member of members) {
-    await deps.userRepo.removeGroupMembership(member.userId, input.groupId);
-  }
-  await deps.groupLastKnownRepo.deletePartition(input.groupId);
-  await deps.groupCodeRepo.deleteCode(meta.code);
-  for (const member of members) {
-    await deps.groupRepo.removeMember(input.groupId, member.userId);
-  }
-  await deps.groupRepo.deleteGroupMeta(input.groupId);
+  // Same teardown the sweeper performs (002 §4.1 step 3, shared via groupDeletion.ts):
+  // reverse-index rows -> GroupLastKnown partition -> code -> members -> meta, then the
+  // expiry row LAST (own concern here since only this caller knows which bucket to target).
+  await hardDeleteGroupFootprint(meta, deps);
   await deps.groupExpiryRepo.deleteExpiryRow(bucketDateOf(meta.endsAt), input.groupId);
 
   const now = deps.clock.now();

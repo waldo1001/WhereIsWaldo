@@ -13,3 +13,7 @@ export function testUserId(): string {
 export function testDeviceId(): string {
   return randomUUID();
 }
+
+export function testGroupId(): string {
+  return `grp_test_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
