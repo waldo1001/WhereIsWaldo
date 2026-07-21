@@ -78,6 +78,9 @@ export interface UserRepo {
   addGroupMembership(userId: string, entry: GroupMembershipIndexEntry): Promise<void>;
   /** Partition scan of `group:` rows = the "my groups" reverse index (001 §12.2, 002 §2.2). */
   listGroupMemberships(userId: string): Promise<GroupMembershipIndexEntry[]>;
+  /** Deletes one `group:{groupId}` reverse-index row — leave/kick/owner hard-delete
+   * (001 §12.5/§12.8/§12.9, B10). Idempotent: a caller may retry after a partial failure. */
+  removeGroupMembership(userId: string, groupId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +282,14 @@ export interface GroupRepo {
   listMembers(groupId: string): Promise<GroupMember[]>;
   /** Point read of a single member row — membership + role check (001 §12.3/§12.6). */
   getMember(groupId: string, userId: string): Promise<GroupMember | null>;
+  /** Guarded merge of `name`/`endsAt`/`code` (001 §12.4 patch, §12.7 rotate; 002 §2.10/§2.11) —
+   * returns the updated meta. B10. */
+  updateGroupMeta(groupId: string, patch: Partial<Pick<GroupMeta, "name" | "endsAt" | "code">>): Promise<GroupMeta>;
+  /** Deletes the `meta` row — owner hard delete (001 §12.5, 002 §4.1 step 3). B10. Idempotent. */
+  deleteGroupMeta(groupId: string): Promise<void>;
+  /** Deletes one `member:{userId}` row — leave/kick/owner hard-delete (001 §12.5/§12.8/§12.9).
+   * B10. Idempotent. */
+  removeMember(groupId: string, userId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +306,9 @@ export interface GroupCodeRepo {
   createCode(code: string, record: GroupCodeRecord): Promise<void>;
   /** Point read — the join lookup (001 §12.6, 002 §2.11). */
   getCode(code: string): Promise<GroupCodeRecord | null>;
+  /** Deletes the `{code}` row — rotate's old code (001 §12.7) or the owner hard delete
+   * (001 §12.5, 002 §4.1 step 3). B10. Idempotent. */
+  deleteCode(code: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +322,11 @@ export interface GroupExpiryRepo {
   /** Writes the `{bucketDate}:{groupId}` row (002 §2.13) — bucket is the UTC date
    * (`yyyy-MM-dd`) of the group's next lifecycle action. */
   putExpiryRow(bucketDate: string, groupId: string, action: GroupExpiryAction): Promise<void>;
+  /** Deletes the `{bucketDate}:{groupId}` row — moved on `PATCH endsAt` (002 §2.13, B10) or
+   * removed entirely by the owner hard delete (001 §12.5, 002 §4.1 step 3, last). Idempotent
+   * by design: the row may already be at a different bucket (a prior partial move or a sweeper
+   * pass) — callers MUST tolerate this as a harmless no-op (002 §2.13's self-healing note). */
+  deleteExpiryRow(bucketDate: string, groupId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

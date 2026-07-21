@@ -1,8 +1,13 @@
 // specs/002 §2.13 `GroupExpiry` table — the sweeper's index. Integration-tested later; no
 // unit tests here (thin adapter, excluded from mutation).
 
+import { RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
 import type { GroupExpiryAction, GroupExpiryRepo } from "../../ports/repositories";
+
+function isNotFound(err: unknown): boolean {
+  return err instanceof RestError && err.statusCode === 404;
+}
 
 export class TableGroupExpiryRepo implements GroupExpiryRepo {
   private readonly client = createTableClient("GroupExpiry");
@@ -15,5 +20,15 @@ export class TableGroupExpiryRepo implements GroupExpiryRepo {
       { partitionKey: bucketDate, rowKey: groupId, action },
       "Replace",
     );
+  }
+
+  async deleteExpiryRow(bucketDate: string, groupId: string): Promise<void> {
+    // Swallow 404: the row may already be at a different bucket (a prior partial move or a
+    // sweeper pass) — this is the self-healing no-op the port contract documents (002 §2.13).
+    try {
+      await this.client.deleteEntity(bucketDate, groupId);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
   }
 }

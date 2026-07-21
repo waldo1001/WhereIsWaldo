@@ -7,8 +7,18 @@ export class InMemoryGroupExpiryRepo implements GroupExpiryRepo {
     this.rows.set(`${bucketDate}:${groupId}`, { bucketDate, groupId, action });
   }
 
+  async deleteExpiryRow(bucketDate: string, groupId: string): Promise<void> {
+    // Idempotent no-op if the row isn't at this bucket (002 §2.13 self-healing note).
+    this.rows.delete(`${bucketDate}:${groupId}`);
+  }
+
   /** Test-only accessor — not part of the GroupExpiryRepo port. */
   get(bucketDate: string, groupId: string) {
     return this.rows.get(`${bucketDate}:${groupId}`);
+  }
+
+  /** Test-only accessor — total row count, to assert no orphans survive a hard delete. */
+  size(): number {
+    return this.rows.size;
   }
 }
