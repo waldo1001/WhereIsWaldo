@@ -1,19 +1,27 @@
 // specs/001 §12.1 `POST /api/v1/groups`, §12.2 `GET /api/v1/groups`, §12.3
-// `GET /api/v1/groups/{groupId}`, §12.6 `POST /api/v1/groups/join`, §12.10
+// `GET /api/v1/groups/{groupId}`, §12.4 `PATCH /api/v1/groups/{groupId}`, §12.5
+// `DELETE /api/v1/groups/{groupId}`, §12.6 `POST /api/v1/groups/join`, §12.7
+// `POST /api/v1/groups/{groupId}/code/rotate`, §12.8 `POST /api/v1/groups/{groupId}/leave`,
+// §12.9 `DELETE /api/v1/groups/{groupId}/members/{userId}`, §12.10
 // `GET /api/v1/groups/{groupId}/locations/latest`. Thin: parse -> authenticate -> domain ->
 // envelope. No business logic here (excluded from mutation, no unit tests — integration
-// tests later). Group controls (§12.4-§12.5/§12.7-§12.9, B10) are out of this task's scope.
+// tests later).
 
 import { app, type HttpRequest, type HttpResponseInit, type InvocationContext } from "@azure/functions";
 import { randomUUID } from "node:crypto";
 import { authenticate } from "../http/authGuard";
 import { ok, fail } from "../http/envelope";
 import { AppError } from "../http/errors";
-import { groupIdParamSchema, parseOrThrow } from "../http/validate";
+import { groupIdParamSchema, memberUserIdParamSchema, parseOrThrow } from "../http/validate";
 import { createGroup } from "../domain/group/createGroup";
 import { listGroups } from "../domain/group/listGroups";
 import { getGroupDetail } from "../domain/group/getGroupDetail";
 import { joinGroup } from "../domain/group/joinGroup";
+import { patchGroup } from "../domain/group/patchGroup";
+import { deleteGroup } from "../domain/group/deleteGroup";
+import { rotateGroupCode } from "../domain/group/rotateGroupCode";
+import { leaveGroup } from "../domain/group/leaveGroup";
+import { kickMember } from "../domain/group/kickMember";
 import { getGroupLatestLocations } from "../domain/group/getGroupLatestLocations";
 import { createTokenVerifier } from "../adapters/auth/firebaseJoseVerifier";
 import { TableUserRepo } from "../adapters/tables/usersTableRepo";
@@ -139,6 +147,110 @@ app.http("joinGroup", {
       return { status: 200, jsonBody: ok(data, features) };
     } catch (err) {
       return errorResponse(err, requestId, context, "joinGroup");
+    }
+  },
+});
+
+app.http("patchGroup", {
+  methods: ["PATCH"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      const body: unknown = await request.json().catch(() => ({}));
+      const result = await patchGroup(
+        { uid: auth.uid, familyId: auth.familyId, groupId, body },
+        { groupRepo, groupExpiryRepo, entitlementsRepo, usageRepo, clock },
+      );
+      const { features, ...data } = result;
+      return { status: 200, jsonBody: ok(data, features) };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "patchGroup");
+    }
+  },
+});
+
+app.http("deleteGroup", {
+  methods: ["DELETE"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      await deleteGroup(
+        { uid: auth.uid, familyId: auth.familyId, groupId },
+        { groupRepo, groupCodeRepo, groupExpiryRepo, groupLastKnownRepo, userRepo, usageRepo, clock },
+      );
+      return { status: 204 };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "deleteGroup");
+    }
+  },
+});
+
+app.http("rotateGroupCode", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}/code/rotate",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      const result = await rotateGroupCode(
+        { uid: auth.uid, familyId: auth.familyId, groupId },
+        { groupRepo, groupCodeRepo, entitlementsRepo, usageRepo, inviteCodeGenerator, clock },
+      );
+      const { features, ...data } = result;
+      return { status: 200, jsonBody: ok(data, features) };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "rotateGroupCode");
+    }
+  },
+});
+
+app.http("leaveGroup", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}/leave",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      await leaveGroup(
+        { uid: auth.uid, familyId: auth.familyId, groupId },
+        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, usageRepo, clock },
+      );
+      return { status: 204 };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "leaveGroup");
+    }
+  },
+});
+
+app.http("kickMember", {
+  methods: ["DELETE"],
+  authLevel: "anonymous",
+  route: "v1/groups/{groupId}/members/{userId}",
+  handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const requestId = newRequestId();
+    try {
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
+      const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
+      await kickMember(
+        { uid: auth.uid, familyId: auth.familyId, groupId, targetUserId },
+        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, usageRepo, clock },
+      );
+      return { status: 204 };
+    } catch (err) {
+      return errorResponse(err, requestId, context, "kickMember");
     }
   },
 });

@@ -87,4 +87,26 @@ export class TableGroupLastKnownRepo implements GroupLastKnownRepo {
     }
     return records;
   }
+
+  async removeMember(groupId: string, userId: string): Promise<void> {
+    try {
+      await this.client.deleteEntity(groupId, `${MEMBER_PREFIX}${userId}`);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
+
+  async deletePartition(groupId: string): Promise<void> {
+    // Every row in this partition belongs to groupId by construction (002 §2.12) — no
+    // per-row filter needed, just wipe the whole partition (same idiom as
+    // devicesTableRepo.deleteDevicesByOwner).
+    const positions = await this.listByGroup(groupId);
+    await Promise.all(
+      positions.map((position) =>
+        this.client.deleteEntity(groupId, `${MEMBER_PREFIX}${position.userId}`).catch((err) => {
+          if (!isNotFound(err)) throw err;
+        }),
+      ),
+    );
+  }
 }

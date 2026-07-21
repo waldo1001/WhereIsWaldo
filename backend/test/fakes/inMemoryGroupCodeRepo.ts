@@ -14,4 +14,8 @@ export class InMemoryGroupCodeRepo implements GroupCodeRepo {
     const record = this.codes.get(code);
     return record ? { ...record } : null;
   }
+
+  async deleteCode(code: string): Promise<void> {
+    this.codes.delete(code);
+  }
 }

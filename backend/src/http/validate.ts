@@ -194,6 +194,20 @@ export const joinGroupRequestSchema = z.object({
 });
 export type JoinGroupRequest = z.infer<typeof joinGroupRequestSchema>;
 
+// specs/001 §12.4 — patch group (owner): at least one of name/endsAt required. The
+// >now / <=maxGroupDurationDays window (and the archived/expired 410 gate) needs `now` +
+// `features`, so — same idiom as createGroupRequestSchema's endsAt — it's a domain-level
+// check (patchGroup.ts), not expressible here.
+export const patchGroupRequestSchema = z
+  .object({
+    name: z.string().min(1).max(50).optional(),
+    endsAt: z.string().datetime().optional(),
+  })
+  .refine((data) => data.name !== undefined || data.endsAt !== undefined, {
+    message: "at least one field (name or endsAt) is required",
+  });
+export type PatchGroupRequest = z.infer<typeof patchGroupRequestSchema>;
+
 // specs/001 §6.1 — create locate request: exactly one of targetUserId | targetDeviceId.
 // No custom .refine() message: parseOrThrow only ever surfaces `issue.path` (see
 // formatFieldPath above), never `issue.message`, so a message here would be dead weight.

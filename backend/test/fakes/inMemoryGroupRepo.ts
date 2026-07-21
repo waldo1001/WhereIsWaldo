@@ -35,6 +35,27 @@ export class InMemoryGroupRepo implements GroupRepo {
     return member ? { ...member } : null;
   }
 
+  async updateGroupMeta(
+    groupId: string,
+    patch: Partial<Pick<GroupMeta, "name" | "endsAt" | "code">>,
+  ): Promise<GroupMeta> {
+    const existing = this.meta.get(groupId);
+    if (!existing) {
+      throw new Error(`InMemoryGroupRepo: no group ${groupId}`);
+    }
+    const updated = { ...existing, ...patch };
+    this.meta.set(groupId, updated);
+    return { ...updated };
+  }
+
+  async deleteGroupMeta(groupId: string): Promise<void> {
+    this.meta.delete(groupId);
+  }
+
+  async removeMember(groupId: string, userId: string): Promise<void> {
+    this.members.get(groupId)?.delete(userId);
+  }
+
   /**
    * Test-only seam: deletes ONLY the meta row, leaving member rows in place. Simulates a
    * crash mid-sweep (002 §4.1 deletes member rows + meta together; a crash between them can

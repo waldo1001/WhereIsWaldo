@@ -32,4 +32,12 @@ export class TableGroupCodeRepo implements GroupCodeRepo {
       throw err;
     }
   }
+
+  async deleteCode(code: string): Promise<void> {
+    try {
+      await this.client.deleteEntity(code, CODE_ROW_KEY);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
 }

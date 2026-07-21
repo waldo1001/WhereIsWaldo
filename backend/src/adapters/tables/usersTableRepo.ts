@@ -75,4 +75,12 @@ export class TableUserRepo implements UserRepo {
     }
     return memberships;
   }
+
+  async removeGroupMembership(userId: string, groupId: string): Promise<void> {
+    try {
+      await this.client.deleteEntity(userId, `${GROUP_PREFIX}${groupId}`);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
 }

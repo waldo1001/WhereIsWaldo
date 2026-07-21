@@ -88,4 +88,37 @@ export class TableGroupRepo implements GroupRepo {
       throw err;
     }
   }
+
+  async updateGroupMeta(
+    groupId: string,
+    patch: Partial<Pick<GroupMeta, "name" | "endsAt" | "code">>,
+  ): Promise<GroupMeta> {
+    await this.client.updateEntity({ partitionKey: groupId, rowKey: META_ROW_KEY, ...patch }, "Merge");
+    const entity = await this.client.getEntity(groupId, META_ROW_KEY);
+    return {
+      groupId,
+      name: String(entity.name),
+      ownerUserId: String(entity.ownerUserId),
+      createdAt: String(entity.createdAt),
+      endsAt: String(entity.endsAt),
+      expiryPolicy: entity.expiryPolicy as GroupExpiryPolicy,
+      code: String(entity.code),
+    };
+  }
+
+  async deleteGroupMeta(groupId: string): Promise<void> {
+    try {
+      await this.client.deleteEntity(groupId, META_ROW_KEY);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
+
+  async removeMember(groupId: string, userId: string): Promise<void> {
+    try {
+      await this.client.deleteEntity(groupId, `${MEMBER_PREFIX}${userId}`);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
 }

@@ -116,6 +116,33 @@ describe("domain/group/joinGroup", () => {
     );
   });
 
+  it("throws GROUP_CODE_INVALID for the OLD code once meta.code has rotated, even before the old GroupCodes row is cleaned up (001 §12.7 rotate-atomicity security fix, 002 §2.11 crash window)", async () => {
+    const deps = buildDeps();
+    await seedGroup(deps, ACTIVE_META);
+    // Simulate the exact crash window between rotateGroupCode's updateGroupMeta (step 2) and
+    // deleteCode (step 3): the new code row exists and meta.code already points to it, but the
+    // OLD code's GroupCodes row is still sitting there un-cleaned-up.
+    await deps.groupCodeRepo.createCode("NEWCODE1", { groupId: "grp_a", createdAt: NOW.toISOString() });
+    await deps.groupRepo.updateGroupMeta("grp_a", { code: "NEWCODE1" });
+    // deliberately NOT calling deps.groupCodeRepo.deleteCode(ACTIVE_META.code) here.
+
+    await expectAppError(
+      joinGroup({ uid: "u2", body: { code: ACTIVE_META.code, displayName: "Noor" } }, deps),
+      "GROUP_CODE_INVALID",
+    );
+  });
+
+  it("accepts the NEW code once meta.code has rotated, in that same crash window", async () => {
+    const deps = buildDeps();
+    await seedGroup(deps, ACTIVE_META);
+    await deps.groupCodeRepo.createCode("NEWCODE1", { groupId: "grp_a", createdAt: NOW.toISOString() });
+    await deps.groupRepo.updateGroupMeta("grp_a", { code: "NEWCODE1" });
+
+    const result = await joinGroup({ uid: "u2", body: { code: "NEWCODE1", displayName: "Noor" } }, deps);
+
+    expect(result.groupId).toBe("grp_a");
+  });
+
   it("throws GROUP_CODE_INVALID (not GROUP_EXPIRED) for an expired delete-policy group (005 §2.3 join row)", async () => {
     const deps = buildDeps();
     await seedGroup(deps, { ...ACTIVE_META, endsAt: "2026-01-02T00:00:00Z", expiryPolicy: "delete" });

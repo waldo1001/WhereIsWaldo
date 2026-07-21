@@ -38,4 +38,12 @@ export class InMemoryGroupLastKnownRepo implements GroupLastKnownRepo {
     const roster = this.records.get(groupId);
     return roster ? [...roster.values()].map((r) => ({ ...r })) : [];
   }
+
+  async removeMember(groupId: string, userId: string): Promise<void> {
+    this.records.get(groupId)?.delete(userId);
+  }
+
+  async deletePartition(groupId: string): Promise<void> {
+    this.records.delete(groupId);
+  }
 }

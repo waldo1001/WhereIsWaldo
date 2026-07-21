@@ -39,4 +39,8 @@ export class InMemoryUserRepo implements UserRepo {
     const existing = this.groupMemberships.get(userId);
     return existing ? [...existing.values()].map((e) => ({ ...e })) : [];
   }
+
+  async removeGroupMembership(userId: string, groupId: string): Promise<void> {
+    this.groupMemberships.get(userId)?.delete(groupId);
+  }
 }
