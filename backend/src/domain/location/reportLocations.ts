@@ -6,6 +6,12 @@
 // (005 §3's "group participation never creates durable location history"): a family-less
 // user's fixes update last-known only. geofenceEtag is the family-scoped config's ETag when
 // a family exists, else the fixed "0" sentinel (no config to sync, geofences are family-only).
+//
+// Group fan-out (001 §5.1 side effect, 002 §2.12, B11): independently of the family
+// last-known write above, the batch's newest fix is also upserted into every one of the
+// reporter's ACTIVE groups (005 §2.2) — position-only, only-newer (src/domain/group/
+// groupLocationFanout.ts). Groups don't require a family, so this runs for family-less
+// callers too.
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, reportLocationsRequestSchema, type LocationFixRequest } from "../../http/validate";
@@ -13,14 +19,18 @@ import type { Clock } from "../../ports/support";
 import type {
   DeviceRepo,
   EntitlementsRepo,
+  GroupLastKnownRepo,
+  GroupRepo,
   IdempotencyRepo,
   LastKnownRecord,
   LastKnownRepo,
   UsageRepo,
+  UserRepo,
 } from "../../ports/repositories";
 import type { FixLine, HistoryStore } from "../../ports/historyStore";
 import type { GeofenceConfigRepo } from "../../ports/geofenceConfig";
 import { getFeatures, type Features } from "../plan";
+import { fanOutLocationToActiveGroups } from "../group/groupLocationFanout";
 
 const MAX_BATCH_SIZE = 100;
 const CLOCK_SKEW_TOLERANCE_MS = 5 * 60 * 1000;
@@ -33,6 +43,9 @@ export interface ReportLocationsDeps {
   usageRepo: UsageRepo;
   geofenceConfigRepo: GeofenceConfigRepo;
   entitlementsRepo: EntitlementsRepo;
+  userRepo: UserRepo;
+  groupRepo: GroupRepo;
+  groupLastKnownRepo: GroupLastKnownRepo;
   clock: Clock;
 }
 
@@ -186,6 +199,23 @@ export async function reportLocations(
     source: newest.source,
   };
   const lastKnownUpdated = await deps.lastKnownRepo.upsertIfNewer(input.uid, lastKnownCandidate);
+
+  // Group fan-out (001 §5.1 side effect, 002 §2.12): active-only, position-only, only-newer
+  // — independent of lastKnownUpdated above (a group's stored position is its own row).
+  await fanOutLocationToActiveGroups(
+    input.uid,
+    {
+      lat: newest.lat,
+      lon: newest.lon,
+      accuracyM: newest.accuracyM,
+      recordedAt: newest.recordedAt,
+      syncIntervalMinutes: device.syncIntervalMinutes,
+    },
+    receivedAt,
+    features.limits.groupGraceDays,
+    now,
+    { userRepo: deps.userRepo, groupRepo: deps.groupRepo, groupLastKnownRepo: deps.groupLastKnownRepo },
+  );
 
   // History gate (005 §3, 001 §5.1): only appended when the caller has a family — a
   // family-less user's fixes update last-known (and, later, group positions) only.

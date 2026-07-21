@@ -17,6 +17,8 @@ import { TableLastKnownRepo } from "../adapters/tables/lastKnownTableRepo";
 import { TableIdempotencyRepo } from "../adapters/tables/idempotencyMarkersTableRepo";
 import { TableEntitlementsRepo } from "../adapters/tables/entitlementsTableRepo";
 import { TableUsageRepo } from "../adapters/tables/usageTableRepo";
+import { TableGroupRepo } from "../adapters/tables/groupsTableRepo";
+import { TableGroupLastKnownRepo } from "../adapters/tables/groupLastKnownTableRepo";
 import { BlobHistoryStore } from "../adapters/blobs/historyBlobStore";
 import { BlobGeofenceConfigRepo } from "../adapters/blobs/geofenceConfigBlobRepo";
 import { SystemClock } from "../adapters/support/systemClock";
@@ -29,6 +31,8 @@ const lastKnownRepo = new TableLastKnownRepo();
 const idempotencyRepo = new TableIdempotencyRepo();
 const entitlementsRepo = new TableEntitlementsRepo();
 const usageRepo = new TableUsageRepo();
+const groupRepo = new TableGroupRepo();
+const groupLastKnownRepo = new TableGroupLastKnownRepo();
 const historyStore = new BlobHistoryStore();
 const geofenceConfigRepo = new BlobGeofenceConfigRepo();
 const clock = new SystemClock();
@@ -70,6 +74,9 @@ app.http("reportLocations", {
           usageRepo,
           geofenceConfigRepo,
           entitlementsRepo,
+          userRepo,
+          groupRepo,
+          groupLastKnownRepo,
           clock,
         },
       );

@@ -8,9 +8,12 @@ import { InMemoryHistoryStore } from "../../fakes/inMemoryHistoryStore";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { InMemoryGeofenceConfigRepo } from "../../fakes/inMemoryGeofenceConfigRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
+import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
+import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
+import { InMemoryGroupLastKnownRepo } from "../../fakes/inMemoryGroupLastKnownRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
-import type { DeviceRecord } from "../../../src/ports/repositories";
+import type { DeviceRecord, GroupMeta } from "../../../src/ports/repositories";
 
 const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
 const DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
@@ -29,8 +32,38 @@ function buildDeps() {
     usageRepo: new InMemoryUsageRepo(),
     geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
     entitlementsRepo,
+    userRepo: new InMemoryUserRepo(),
+    groupRepo: new InMemoryGroupRepo(),
+    groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
     clock: new FixedClock(new Date(NOW)),
   };
+}
+
+// specs/002 §2.10 — seeds a group's meta + the reporter's membership (both the Groups
+// roster row and the Users `group:` reverse-index row the fan-out reads).
+async function seedActiveGroupMembership(
+  deps: ReturnType<typeof buildDeps>,
+  groupId: string,
+  overrides: Partial<GroupMeta> = {},
+): Promise<void> {
+  const meta: GroupMeta = {
+    groupId,
+    name: "Festival crew",
+    ownerUserId: USER_ID,
+    createdAt: "2026-07-01T00:00:00Z",
+    endsAt: "2026-08-02T22:00:00Z",
+    expiryPolicy: "delete",
+    code: "ABCD1234",
+    ...overrides,
+  };
+  await deps.groupRepo.createGroupMeta(meta);
+  await deps.groupRepo.addMember(groupId, {
+    userId: USER_ID,
+    role: "owner",
+    displayName: "Eric",
+    joinedAt: meta.createdAt,
+  });
+  await deps.userRepo.addGroupMembership(USER_ID, { groupId, role: "owner", joinedAt: meta.createdAt });
 }
 
 // specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId. Seeds
@@ -128,6 +161,9 @@ describe("domain/location/reportLocations", () => {
       usageRepo: new InMemoryUsageRepo(),
       geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
+      userRepo: new InMemoryUserRepo(),
+      groupRepo: new InMemoryGroupRepo(),
+      groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
       clock: new FixedClock(new Date(NOW)),
     };
 
@@ -756,6 +792,225 @@ describe("domain/location/reportLocations", () => {
       const replay = await reportLocations(familyLessInput({ body }), deps);
       expect(replay.accepted).toBe(0);
       expect(replay.duplicates).toBe(1);
+    });
+  });
+
+  // specs/001 §5.1 group fan-out side effect + specs/002 §2.12 GroupLastKnown. Active-only,
+  // position-only, only-newer — mirrors the family LastKnown semantics but independently.
+  describe("group fan-out (001 §5.1, 002 §2.12)", () => {
+    const GROUP_ID = "grp_9J2Kq7Lm3NpR5sTvWxYz";
+
+    it("upserts a position-only GroupLastKnown row into the reporter's active group", async () => {
+      const deps = buildDeps();
+      seedDevice(deps, { syncIntervalMinutes: 15 });
+      await seedActiveGroupMembership(deps, GROUP_ID);
+
+      await reportLocations(baseInput(), deps);
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored).toEqual({
+        userId: USER_ID,
+        lat: 51.0543,
+        lon: 3.7174,
+        accuracyM: 12.5,
+        recordedAt: "2026-07-19T09:00:00Z",
+        receivedAt: new Date(NOW).toISOString(),
+        syncIntervalMinutes: 15,
+      });
+    });
+
+    it("never includes deviceId, batteryPct, or source (position-only, 005 §3)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+
+      await reportLocations(baseInput(), deps);
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(Object.keys(stored as object).sort()).toEqual(
+        ["accuracyM", "lat", "lon", "recordedAt", "receivedAt", "syncIntervalMinutes", "userId"].sort(),
+      );
+    });
+
+    it("fans out to every one of the reporter's active groups", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, "grp_a");
+      await seedActiveGroupMembership(deps, "grp_b");
+
+      await reportLocations(baseInput(), deps);
+
+      expect(await deps.groupLastKnownRepo.get("grp_a", USER_ID)).not.toBeNull();
+      expect(await deps.groupLastKnownRepo.get("grp_b", USER_ID)).not.toBeNull();
+    });
+
+    it("does NOT fan out to a grace-state (ended) group", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID, {
+        endsAt: "2026-07-18T00:00:00Z", // 1 day before NOW, grace 7 days -> "ended"
+        expiryPolicy: "grace",
+      });
+
+      await reportLocations(baseInput(), deps);
+
+      expect(await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID)).toBeNull();
+    });
+
+    it("does NOT fan out to an archived group", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID, {
+        endsAt: "2026-01-01T00:00:00Z",
+        expiryPolicy: "archive",
+      });
+
+      await reportLocations(baseInput(), deps);
+
+      expect(await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID)).toBeNull();
+    });
+
+    it("does NOT fan out to an expired (delete-policy, past endsAt) group", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID, {
+        endsAt: "2026-01-01T00:00:00Z",
+        expiryPolicy: "delete",
+      });
+
+      await reportLocations(baseInput(), deps);
+
+      expect(await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID)).toBeNull();
+    });
+
+    it("tolerates an orphaned reverse-index row (group meta missing — self-healing skip)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await deps.userRepo.addGroupMembership(USER_ID, {
+        groupId: "grp_gone",
+        role: "owner",
+        joinedAt: NOW,
+      });
+
+      await expect(reportLocations(baseInput(), deps)).resolves.toMatchObject({ accepted: 1 });
+    });
+
+    it("only-newer: does not overwrite a group position that is already newer than the incoming fix", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+      deps.groupLastKnownRepo.seed(GROUP_ID, {
+        userId: USER_ID,
+        lat: 10,
+        lon: 10,
+        accuracyM: 5,
+        recordedAt: "2026-07-19T09:30:00Z", // newer than the fix's 09:00:00Z
+        receivedAt: "2026-07-19T09:30:02Z",
+        syncIntervalMinutes: 15,
+      });
+
+      await reportLocations(baseInput(), deps);
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored?.lat).toBe(10); // unchanged
+    });
+
+    it("only-newer: does overwrite when the incoming fix is newer", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+      deps.groupLastKnownRepo.seed(GROUP_ID, {
+        userId: USER_ID,
+        lat: 10,
+        lon: 10,
+        accuracyM: 5,
+        recordedAt: "2026-07-19T08:00:00Z", // older than the fix's 09:00:00Z
+        receivedAt: "2026-07-19T08:00:02Z",
+        syncIntervalMinutes: 15,
+      });
+
+      await reportLocations(baseInput(), deps);
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored?.lat).toBe(51.0543);
+    });
+
+    it("uses the batch's newest fix, not the last array element", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+
+      await reportLocations(
+        baseInput({
+          body: {
+            batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+            fixes: [
+              fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001", recordedAt: "2026-07-19T09:05:00Z", lat: 52.0 }),
+              fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000002", recordedAt: "2026-07-19T09:00:00Z", lat: 51.0 }),
+            ],
+          },
+        }),
+        deps,
+      );
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored?.lat).toBe(52.0);
+      expect(stored?.recordedAt).toBe("2026-07-19T09:05:00Z");
+    });
+
+    it("freezes the reporting device's CURRENT syncIntervalMinutes into the group position", async () => {
+      const deps = buildDeps();
+      seedDevice(deps, { syncIntervalMinutes: 30 });
+      await seedActiveGroupMembership(deps, GROUP_ID);
+
+      await reportLocations(baseInput(), deps);
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored?.syncIntervalMinutes).toBe(30);
+    });
+
+    it("does not fan out for a duplicate (replayed) batch", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+      const body = {
+        batchId: "b7f2c1d0-0000-4000-8000-000000000001",
+        fixes: [fix({ fixId: "a1e2b3c4-0000-4000-8000-000000000001" })],
+      };
+      await reportLocations(baseInput({ body }), deps);
+      deps.groupLastKnownRepo.seed(GROUP_ID, {
+        userId: USER_ID,
+        lat: 999,
+        lon: 999,
+        accuracyM: 1,
+        recordedAt: "2026-07-19T09:00:00Z",
+        receivedAt: "2026-07-19T09:00:02Z",
+        syncIntervalMinutes: 15,
+      });
+
+      await reportLocations(baseInput({ body }), deps); // replay — no marker inserted
+
+      const stored = await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID);
+      expect(stored?.lat).toBe(999); // untouched by the replay
+    });
+
+    it("still fans out for a family-less caller (groups don't require a family, 001 §5.1)", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+      await seedActiveGroupMembership(deps, GROUP_ID);
+
+      await reportLocations(baseInput({ familyId: null }), deps);
+
+      expect(await deps.groupLastKnownRepo.get(GROUP_ID, USER_ID)).not.toBeNull();
+    });
+
+    it("does not fan out at all for a caller with no group memberships", async () => {
+      const deps = buildDeps();
+      seedDevice(deps);
+
+      await expect(reportLocations(baseInput(), deps)).resolves.toMatchObject({ accepted: 1 });
+      // No assertion possible on "no groups written" beyond absence — covered implicitly by
+      // every other test asserting presence only when a membership was actually seeded.
     });
   });
 });
