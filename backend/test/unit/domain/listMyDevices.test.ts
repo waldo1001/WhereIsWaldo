@@ -160,4 +160,15 @@ describe("domain/device/listMyDevices", () => {
 
     expect(result.devices).toEqual([]);
   });
+
+  it("falls back to the caller's uid as ownerDisplayName when the profile lookup returns null (data-integrity edge case)", async () => {
+    const deps = buildDeps();
+    // Deliberately no userRepo.createProfile call — getProfile(uid) resolves null even
+    // though authGuard already let the request through (defense in depth, not a real path).
+    deps.deviceRepo.seed("u3", baseDevice({ deviceId: "device-3", ownerUserId: "u3" }));
+
+    const result = await listMyDevices({ uid: "u3", familyId: null }, deps);
+
+    expect(result.devices[0]?.ownerDisplayName).toBe("u3");
+  });
 });

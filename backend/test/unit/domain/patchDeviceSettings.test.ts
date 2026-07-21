@@ -93,6 +93,32 @@ describe("domain/device/patchDeviceSettings", () => {
     });
   });
 
+  it("sends a push when only trackingEnabled changes (syncIntervalMinutes untouched)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+
+    await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(1);
+    expect(deps.pushSender.sent[0]?.data).toMatchObject({ syncIntervalMinutes: "15", trackingEnabled: "false" });
+  });
+
+  it("leaves pushInvalid false after a successful (non-invalidToken) push", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", pushInvalid: false, syncIntervalMinutes: 15 });
+
+    await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { syncIntervalMinutes: 30 } },
+      deps,
+    );
+
+    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    expect(stored?.pushInvalid).toBe(false);
+  });
+
   it("sends no push when neither syncIntervalMinutes nor trackingEnabled actually changed", async () => {
     const deps = buildDeps();
     seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
@@ -199,7 +225,7 @@ describe("domain/device/patchDeviceSettings", () => {
     expect(stored?.pushToken).toBe("fresh-token");
   });
 
-  it("throws AUTH_FORBIDDEN when a non-parent owner attempts a restricted field", async () => {
+  it("throws AUTH_FORBIDDEN when a non-parent owner attempts syncIntervalMinutes", async () => {
     const deps = buildDeps();
     seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
 
@@ -212,6 +238,32 @@ describe("domain/device/patchDeviceSettings", () => {
           deviceId: DEVICE_ID,
           body: { syncIntervalMinutes: 30 },
         },
+        deps,
+      ),
+      "AUTH_FORBIDDEN",
+    );
+  });
+
+  it("throws AUTH_FORBIDDEN when a non-parent owner attempts trackingEnabled (isolated from other restricted fields)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "member", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+        deps,
+      ),
+      "AUTH_FORBIDDEN",
+    );
+  });
+
+  it("throws AUTH_FORBIDDEN when a non-parent owner attempts deviceName (isolated from other restricted fields)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "member", deviceId: DEVICE_ID, body: { deviceName: "New name" } },
         deps,
       ),
       "AUTH_FORBIDDEN",
@@ -405,5 +457,17 @@ describe("domain/device/patchDeviceSettings", () => {
     );
 
     expect(result.device).toMatchObject({ model: "Pixel 8", appVersion: "1.0.0", deviceName: "Eric's phone" });
+  });
+
+  it("preserves a truthy trackingEnabled when the patch body omits it", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { trackingEnabled: true });
+
+    const result = await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { deviceName: "New name" } },
+      deps,
+    );
+
+    expect(result.device.trackingEnabled).toBe(true);
   });
 });
