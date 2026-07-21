@@ -3,23 +3,26 @@ import Foundation
 /// specs/004-ios-client.md §3.4 (001 §12.3–12.9; 005 §2.3) — group detail: roster + share code,
 /// owner controls (rename/extend/end/rotate/kick/delete), and member self-service (leave).
 ///
-/// `GROUP_EXPIRED` surfacing from ANY call here (load or mutation) sets `exitReason = .expired`
-/// rather than a plain error — 005 §2.3's lazy-enforcement matrix means the group underneath this
-/// screen just stopped being viewable, so the only sane recovery is leaving the screen (the
-/// caller/screen navigates back to the groups list, which re-`load()`s and reflects the true
-/// state), not retrying in place.
+/// `GROUP_EXPIRED` surfacing from ANY call here (load or mutation) sets `state = .expired` — a
+/// persistent, rendered notice (same pattern as `GroupMapViewModel`), NOT an immediate silent exit
+/// via `exitReason`. 005 §2.3's lazy-enforcement matrix means the group underneath this screen just
+/// stopped being viewable; the spec (003 §12.2, mirrored by 004 §3.4) requires bouncing back to the
+/// groups list "with a 'this group has ended' notice" — so the screen must actually show that
+/// notice and let the caller acknowledge it (tap "Back to groups"), rather than the screen
+/// vanishing out from under them before they can read anything.
 @MainActor
 public final class GroupDetailViewModel: ObservableObject {
     public enum State: Equatable {
         case loading
         case loaded(GroupDetail)
         case error(String)
+        case expired
     }
 
-    /// Terminal reasons to leave this screen. `left`/`deleted` are the caller's own action
-    /// succeeding; `expired` is an external event (the group ended while this screen was open).
+    /// Terminal reasons for the screen to auto-navigate away. Both are the caller's OWN action
+    /// succeeding — an immediate exit is the correct, expected UX there (unlike the surprise
+    /// external `GROUP_EXPIRED` event, which is `state = .expired` instead, see above).
     public enum ExitReason: Equatable {
-        case expired
         case left
         case deleted
     }
@@ -48,7 +51,7 @@ public final class GroupDetailViewModel: ObservableObject {
             state = .loaded(envelope.data)
         } catch {
             if (error as? APIError)?.serverCode == .groupExpired {
-                exitReason = .expired
+                state = .expired
             } else {
                 state = .error(userFacingMessage(for: error))
             }
@@ -140,7 +143,7 @@ public final class GroupDetailViewModel: ObservableObject {
 
     private func handleMutationFailure(_ error: Error) {
         if (error as? APIError)?.serverCode == .groupExpired {
-            exitReason = .expired
+            state = .expired
         } else {
             lastActionError = userFacingMessage(for: error)
         }

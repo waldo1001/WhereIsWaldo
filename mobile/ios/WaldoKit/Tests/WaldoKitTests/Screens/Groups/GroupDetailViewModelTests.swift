@@ -4,9 +4,12 @@ import Testing
 
 /// specs/004-ios-client.md §3.4 (001 §12.3–12.9; 005 §2.3) — group detail: roster, share code,
 /// owner controls (rename/extend/rotate/kick/delete) and member self-service (leave). `GROUP_EXPIRED`
-/// surfacing anywhere here sets `exitReason = .expired` so the screen can bounce back to the groups
-/// list (005 §2.3's lazy-enforcement matrix — the same pattern `GeofencesViewModel` uses for its
-/// version-conflict re-fetch, but here the "recovery" is leaving the screen, not merging).
+/// surfacing anywhere here sets `state = .expired` — a persistent, rendered notice (same pattern as
+/// `GroupMapViewModel`) rather than an immediate silent exit — so the screen actually shows "this
+/// group has ended" before the caller navigates back to the groups list (005 §2.3's lazy-enforcement
+/// matrix). `left`/`deleted` stay on `exitReason`, since those are the caller's OWN action
+/// succeeding — an immediate exit is the correct, expected UX there, unlike the surprise external
+/// `GROUP_EXPIRED` event.
 @MainActor
 struct GroupDetailViewModelTests {
 
@@ -45,7 +48,7 @@ struct GroupDetailViewModelTests {
         #expect(viewModel.isOwner == false)
     }
 
-    @Test func load_groupExpired_setsExitReasonExpired() async {
+    @Test func load_groupExpired_setsExpiredState() async {
         let api = FakeAPIClient()
         api.getGroupHandler = { _ in
             throw APIError.server(APIErrorBody(code: .groupExpired, message: "expired", details: nil, requestId: "r1"), httpStatus: 410)
@@ -54,7 +57,8 @@ struct GroupDetailViewModelTests {
 
         await viewModel.load()
 
-        #expect(viewModel.exitReason == .expired)
+        #expect(viewModel.state == .expired)
+        #expect(viewModel.exitReason == nil, "expired is a rendered state, not an auto-exit signal")
     }
 
     @Test func load_otherFailure_setsErrorState() async {
@@ -201,7 +205,7 @@ struct GroupDetailViewModelTests {
         #expect(viewModel.exitReason == .deleted)
     }
 
-    @Test func mutation_groupExpiredMidAction_setsExitReasonExpired() async {
+    @Test func mutation_groupExpiredMidAction_setsExpiredState() async {
         let api = FakeAPIClient()
         api.getGroupHandler = { _ in TestFeatures.envelope(self.makeDetail()) }
         api.updateGroupHandler = { _, _, _ in
@@ -212,7 +216,22 @@ struct GroupDetailViewModelTests {
 
         await viewModel.rename(name: "New name")
 
-        #expect(viewModel.exitReason == .expired)
+        #expect(viewModel.state == .expired)
+        #expect(viewModel.exitReason == nil)
+    }
+
+    @Test func mutation_groupExpiredDuringKick_setsExpiredState() async {
+        let api = FakeAPIClient()
+        api.getGroupHandler = { _ in TestFeatures.envelope(self.makeDetail()) }
+        api.removeGroupMemberHandler = { _, _ in
+            throw APIError.server(APIErrorBody(code: .groupExpired, message: "expired", details: nil, requestId: "r1"), httpStatus: 410)
+        }
+        let viewModel = GroupDetailViewModel(apiClient: api, groupId: "grp_1")
+        await viewModel.load()
+
+        await viewModel.kick(userId: "u2")
+
+        #expect(viewModel.state == .expired)
     }
 
     @Test func shareText_formatsCodeAsHyphenatedGroupsAndIncludesGroupName() {

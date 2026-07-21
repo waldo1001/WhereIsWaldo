@@ -89,7 +89,7 @@ struct RootView: View {
                 GroupDetailScreen(
                     viewModel: GroupDetailViewModel(apiClient: apiClient, groupId: groupId),
                     onSelectMap: { coordinator.showGroupMap(groupId: groupId) },
-                    onExit: { _ in coordinator.showGroupsList() }
+                    onExit: { coordinator.showGroupsList() }
                 )
             case .groupJoin(let prefillCode):
                 GroupJoinScreen(
