@@ -87,18 +87,18 @@ describe("http/authGuard authenticate()", () => {
     expect(ctx).toEqual({ uid: "u1", familyId: "fam_abc", role: "parent" });
   });
 
-  it("throws FAMILY_NOT_FOUND when caller has no profile and the endpoint disallows it", async () => {
+  it("throws PROFILE_NOT_FOUND when caller has no profile and the endpoint disallows it", async () => {
     const tokenVerifier = new StubTokenVerifier();
     tokenVerifier.uid = "u2";
     const userRepo = new InMemoryUserRepo();
 
     await expectAppError(
       authenticate("Bearer sometoken", { tokenVerifier, userRepo }),
-      "FAMILY_NOT_FOUND",
+      "PROFILE_NOT_FOUND",
     );
   });
 
-  it("allows no-profile callers through for the two §1.5.3 endpoints", async () => {
+  it("allows no-profile callers through for the four §1.5.3 bootstrap endpoints", async () => {
     const tokenVerifier = new StubTokenVerifier();
     tokenVerifier.uid = "u3";
     const userRepo = new InMemoryUserRepo();
@@ -110,5 +110,16 @@ describe("http/authGuard authenticate()", () => {
     );
 
     expect(ctx).toEqual({ uid: "u3", familyId: null, role: null });
+  });
+
+  it("passes an existing family-less profile through unchanged (familyId/role null, §1.5 step 4)", async () => {
+    const tokenVerifier = new StubTokenVerifier();
+    tokenVerifier.uid = "u4";
+    const userRepo = new InMemoryUserRepo();
+    userRepo.seed("u4", { familyId: null, role: null, displayName: "Group-only Noor" });
+
+    const ctx = await authenticate("Bearer sometoken", { tokenVerifier, userRepo });
+
+    expect(ctx).toEqual({ uid: "u4", familyId: null, role: null });
   });
 });

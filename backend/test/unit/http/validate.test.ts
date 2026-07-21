@@ -2,7 +2,7 @@
 // §3: "validation before use" for path inputs, not just request bodies).
 
 import { describe, expect, it } from "vitest";
-import { memberUserIdParamSchema, parseOrThrow } from "../../../src/http/validate";
+import { deviceIdParamSchema, memberUserIdParamSchema, parseOrThrow } from "../../../src/http/validate";
 import { expectAppError } from "../../support/expectAppError";
 
 /** parseOrThrow is synchronous; wrap the call so expectAppError can assert on the rejection. */
@@ -53,5 +53,29 @@ describe("http/validate memberUserIdParamSchema", () => {
     const result = await parse({ userId: "no-such-user" });
 
     expect(result).toEqual({ userId: "no-such-user" });
+  });
+});
+
+// specs/001 §4.3 — the {deviceId} path param (only exercised from the untested, thin
+// devices.functions.ts layer — tested directly here to keep it under the mutation gate).
+describe("http/validate deviceIdParamSchema", () => {
+  const VALID_DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
+
+  async function parseDeviceId(input: unknown) {
+    return parseOrThrow(deviceIdParamSchema, input);
+  }
+
+  it("accepts a well-formed UUID deviceId", async () => {
+    const result = await parseDeviceId({ deviceId: VALID_DEVICE_ID });
+
+    expect(result).toEqual({ deviceId: VALID_DEVICE_ID });
+  });
+
+  it('throws VALIDATION_FAILED with details.fields: ["deviceId"] for a non-UUID deviceId', async () => {
+    await expectAppError(parseDeviceId({ deviceId: "not-a-uuid" }), "VALIDATION_FAILED", { fields: ["deviceId"] });
+  });
+
+  it('throws VALIDATION_FAILED with details.fields: ["deviceId"] for a missing deviceId (path param absent)', async () => {
+    await expectAppError(parseDeviceId({ deviceId: undefined }), "VALIDATION_FAILED", { fields: ["deviceId"] });
   });
 });

@@ -48,8 +48,10 @@ export interface FamilyRepo {
 // ---------------------------------------------------------------------------
 
 export interface UserProfile {
-  familyId: string;
-  role: Role;
+  /** Nullable — family-less users (groups only, 001 §1.5, 002 §2.2). */
+  familyId: string | null;
+  /** Denormalized from Families; null iff familyId is null (002 §2.2). */
+  role: Role | null;
   displayName: string;
 }
 
