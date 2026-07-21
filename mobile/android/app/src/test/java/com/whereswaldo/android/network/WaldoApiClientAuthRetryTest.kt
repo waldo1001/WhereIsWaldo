@@ -153,4 +153,59 @@ class WaldoApiClientAuthRetryTest {
         assertEquals(1, authProvider.forceRefreshCallCount)
         assertEquals(2, server.requestCount)
     }
+
+    // ------------------------------------------------------------------
+    // specs/005 (temporary groups) added three more bare-204 endpoints — deleteGroup (§12.5),
+    // leaveGroup (§12.8), removeGroupMember (§12.9) — all now funneling through the same
+    // `unwrapBare204` helper as removeMember (network/WaldoApiClient.kt). These tests prove the
+    // shared helper's retry-once behavior still holds for every one of its four call sites.
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `deleteGroup's bare 204 retries once on AUTH_TOKEN_EXPIRED then succeeds`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = client.deleteGroup("grp_1")
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals(Unit, result.data)
+        assertEquals(null, result.features)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `leaveGroup's bare 204 retries once on AUTH_TOKEN_EXPIRED then succeeds`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = client.leaveGroup("grp_1")
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals(Unit, result.data)
+        assertEquals(null, result.features)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `removeGroupMember's bare 204 retries once on AUTH_TOKEN_EXPIRED then succeeds`() = runTest {
+        authProvider.tokenAfterRefresh = "fresh-token"
+        server.enqueue(MockResponse().setResponseCode(401).setBody(expiredBody))
+        server.enqueue(MockResponse().setResponseCode(204))
+
+        val result = client.removeGroupMember("grp_1", "u9")
+
+        assertTrue(result is ApiResult.Success)
+        result as ApiResult.Success
+        assertEquals(Unit, result.data)
+        assertEquals(null, result.features)
+        assertEquals(1, authProvider.forceRefreshCallCount)
+        assertEquals(2, server.requestCount)
+    }
 }

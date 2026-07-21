@@ -4,6 +4,7 @@ import com.whereswaldo.android.network.dto.AcceptInviteRequestDto
 import com.whereswaldo.android.network.dto.AcceptInviteResponseDto
 import com.whereswaldo.android.network.dto.CreateFamilyRequestDto
 import com.whereswaldo.android.network.dto.CreateFamilyResponseDto
+import com.whereswaldo.android.network.dto.CreateGroupRequestDto
 import com.whereswaldo.android.network.dto.CreateInviteRequestDto
 import com.whereswaldo.android.network.dto.CreateInviteResponseDto
 import com.whereswaldo.android.network.dto.CreateLocateRequestRequestDto
@@ -15,7 +16,12 @@ import com.whereswaldo.android.network.dto.FulfillResponseDto
 import com.whereswaldo.android.network.dto.GeofenceConfigResponseDto
 import com.whereswaldo.android.network.dto.GeofenceEventHistoryResponseDto
 import com.whereswaldo.android.network.dto.GeofenceEventsResponseDto
+import com.whereswaldo.android.network.dto.GroupDetailDto
+import com.whereswaldo.android.network.dto.GroupDto
+import com.whereswaldo.android.network.dto.GroupLatestLocationsResponseDto
+import com.whereswaldo.android.network.dto.JoinGroupRequestDto
 import com.whereswaldo.android.network.dto.ListDevicesResponseDto
+import com.whereswaldo.android.network.dto.ListGroupsResponseDto
 import com.whereswaldo.android.network.dto.LocateRequestDto
 import com.whereswaldo.android.network.dto.LocateRequestStatusResponseDto
 import com.whereswaldo.android.network.dto.LocationHistoryResponseDto
@@ -25,7 +31,9 @@ import com.whereswaldo.android.network.dto.ReplaceGeofencesRequestDto
 import com.whereswaldo.android.network.dto.ReportGeofenceEventsRequestDto
 import com.whereswaldo.android.network.dto.ReportLocationsRequestDto
 import com.whereswaldo.android.network.dto.ReportLocationsResponseDto
+import com.whereswaldo.android.network.dto.RotateGroupCodeResponseDto
 import com.whereswaldo.android.network.dto.UpdateDeviceRequestDto
+import com.whereswaldo.android.network.dto.UpdateGroupRequestDto
 import com.whereswaldo.android.network.dto.UpdateMemberRequestDto
 import com.whereswaldo.android.network.dto.LatestLocationsResponseDto
 import okhttp3.ResponseBody
@@ -41,11 +49,11 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
- * Raw Retrofit surface — one method per 001-api-contract.md §3–§7 endpoint, per the mapping
+ * Raw Retrofit surface — one method per 001-api-contract.md §3–§7/§12 endpoint, per the mapping
  * table in specs/003-android-client.md §5. Base URL ends in `/api/`; every path here is
  * `v1/...`, together forming 001 §1.1's `/api/v1/...` routes.
  *
- * Nothing outside [WaldoApiClient] depends on this interface directly — it implements the five
+ * Nothing outside [WaldoApiClient] depends on this interface directly — it implements the six
  * narrow port interfaces (`network/ports/`) that the rest of the app actually uses.
  */
 interface WaldoApiService {
@@ -158,4 +166,47 @@ interface WaldoApiService {
         @Query("limit") limit: Int? = null,
         @Query("cursor") cursor: String? = null,
     ): Response<Envelope<GeofenceEventHistoryResponseDto>>
+
+    // ---- §12 Groups (temporary; specs/005) ----
+
+    @POST("v1/groups")
+    suspend fun createGroup(@Body request: CreateGroupRequestDto): Response<Envelope<GroupDto>>
+
+    @GET("v1/groups")
+    suspend fun listGroups(): Response<Envelope<ListGroupsResponseDto>>
+
+    @GET("v1/groups/{groupId}")
+    suspend fun getGroup(@Path("groupId") groupId: String): Response<Envelope<GroupDetailDto>>
+
+    @PATCH("v1/groups/{groupId}")
+    suspend fun updateGroup(
+        @Path("groupId") groupId: String,
+        @Body request: UpdateGroupRequestDto,
+    ): Response<Envelope<GroupDto>>
+
+    /** Bare 204 (001 §12.5) — see §3.6's `removeMember` doc for why this returns `ResponseBody`. */
+    @DELETE("v1/groups/{groupId}")
+    suspend fun deleteGroup(@Path("groupId") groupId: String): Response<ResponseBody>
+
+    @POST("v1/groups/join")
+    suspend fun joinGroup(@Body request: JoinGroupRequestDto): Response<Envelope<GroupDto>>
+
+    @POST("v1/groups/{groupId}/code/rotate")
+    suspend fun rotateGroupCode(@Path("groupId") groupId: String): Response<Envelope<RotateGroupCodeResponseDto>>
+
+    /** Bare 204 (001 §12.8). */
+    @POST("v1/groups/{groupId}/leave")
+    suspend fun leaveGroup(@Path("groupId") groupId: String): Response<ResponseBody>
+
+    /** Bare 204 (001 §12.9). */
+    @DELETE("v1/groups/{groupId}/members/{userId}")
+    suspend fun removeGroupMember(
+        @Path("groupId") groupId: String,
+        @Path("userId") userId: String,
+    ): Response<ResponseBody>
+
+    @GET("v1/groups/{groupId}/locations/latest")
+    suspend fun getGroupLatestLocations(
+        @Path("groupId") groupId: String,
+    ): Response<Envelope<GroupLatestLocationsResponseDto>>
 }
