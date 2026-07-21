@@ -34,4 +34,14 @@ export class InMemoryGroupRepo implements GroupRepo {
     const member = this.members.get(groupId)?.get(userId);
     return member ? { ...member } : null;
   }
+
+  /**
+   * Test-only seam: deletes ONLY the meta row, leaving member rows in place. Simulates a
+   * crash mid-sweep (002 §4.1 deletes member rows + meta together; a crash between them can
+   * leave a member row orphaned) so getGroupDetail's defense-in-depth meta-missing check is
+   * independently observable from its membership-missing check.
+   */
+  deleteMetaOnlyForTest(groupId: string): void {
+    this.meta.delete(groupId);
+  }
 }

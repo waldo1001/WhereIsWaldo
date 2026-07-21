@@ -65,6 +65,17 @@ describe("domain/group/getGroupDetail", () => {
     );
   });
 
+  it("throws GROUP_NOT_FOUND when meta is gone but an orphaned member row survives (crash mid-sweep)", async () => {
+    const deps = buildDeps();
+    await seed(deps, ACTIVE_META);
+    deps.groupRepo.deleteMetaOnlyForTest("grp_a");
+
+    await expectAppError(
+      getGroupDetail({ uid: "u1", familyId: null, groupId: "grp_a" }, deps),
+      "GROUP_NOT_FOUND",
+    );
+  });
+
   it("returns the full roster and code for an active group (owner)", async () => {
     const deps = buildDeps();
     await seed(deps, ACTIVE_META);
@@ -194,6 +205,17 @@ describe("domain/group/getGroupDetail", () => {
       const result = await getGroupDetail({ uid: "u1", familyId: "fam_x", groupId: "grp_a" }, deps);
 
       expect(result.features).toEqual(getFeatures("active"));
+    });
+
+    it("throws INTERNAL_ERROR when the caller's family has no Entitlements record", async () => {
+      const deps = buildDeps();
+      await seed(deps, ACTIVE_META);
+      // Deliberately NOT seeding entitlementsRepo for fam_no_ent.
+
+      await expectAppError(
+        getGroupDetail({ uid: "u1", familyId: "fam_no_ent", groupId: "grp_a" }, deps),
+        "INTERNAL_ERROR",
+      );
     });
   });
 

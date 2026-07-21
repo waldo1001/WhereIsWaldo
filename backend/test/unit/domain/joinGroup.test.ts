@@ -298,6 +298,54 @@ describe("domain/group/joinGroup", () => {
 
       expect(result.features).toEqual(getFeatures("active"));
     });
+
+    it("throws INTERNAL_ERROR when the joiner's family has no Entitlements record", async () => {
+      const deps = buildDeps();
+      await seedGroup(deps, ACTIVE_META);
+      deps.userRepo.seed("u2", { familyId: "fam_no_ent", role: "member", displayName: "Noor" });
+      // Deliberately NOT seeding entitlementsRepo for fam_no_ent.
+
+      await expectAppError(
+        joinGroup({ uid: "u2", body: { code: "ABCD1234" } }, deps),
+        "INTERNAL_ERROR",
+      );
+    });
+  });
+
+  describe("owner invariants (defense-in-depth)", () => {
+    it("throws INTERNAL_ERROR when the group owner has no profile at all", async () => {
+      const deps = buildDeps();
+      // Seed the group WITHOUT going through seedGroup's owner-profile default, to simulate
+      // a data-integrity violation (createGroup always bootstraps one in practice).
+      await deps.groupRepo.createGroupMeta(ACTIVE_META);
+      await deps.groupRepo.addMember(ACTIVE_META.groupId, {
+        userId: ACTIVE_META.ownerUserId,
+        role: "owner",
+        displayName: "Owner",
+        joinedAt: ACTIVE_META.createdAt,
+      });
+      await deps.groupCodeRepo.createCode(ACTIVE_META.code, {
+        groupId: ACTIVE_META.groupId,
+        createdAt: ACTIVE_META.createdAt,
+      });
+
+      await expectAppError(
+        joinGroup({ uid: "u2", body: { code: "ABCD1234", displayName: "Noor" } }, deps),
+        "INTERNAL_ERROR",
+      );
+    });
+
+    it("throws INTERNAL_ERROR when the group owner's family has no Entitlements record", async () => {
+      const deps = buildDeps();
+      await seedGroup(deps, ACTIVE_META);
+      deps.userRepo.seed("owner1", { familyId: "fam_owner_no_ent", role: "parent", displayName: "Owner" });
+      // Deliberately NOT seeding entitlementsRepo for fam_owner_no_ent.
+
+      await expectAppError(
+        joinGroup({ uid: "u2", body: { code: "ABCD1234", displayName: "Noor" } }, deps),
+        "INTERNAL_ERROR",
+      );
+    });
   });
 
   it("records usage metric apiCalls under the joiner's familyId when they have one", async () => {

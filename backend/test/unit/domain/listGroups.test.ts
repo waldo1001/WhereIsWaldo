@@ -6,6 +6,7 @@ import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
+import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
 
 const NOW = new Date("2026-07-21T10:00:00Z");
@@ -269,6 +270,13 @@ describe("domain/group/listGroups", () => {
       const result = await listGroups({ uid: "u1", familyId: "fam_x" }, deps);
 
       expect(result.features).toEqual(getFeatures("active"));
+    });
+
+    it("throws INTERNAL_ERROR when the caller's family has no Entitlements record", async () => {
+      const deps = buildDeps();
+      // Deliberately NOT seeding entitlementsRepo for fam_no_ent.
+
+      await expectAppError(listGroups({ uid: "u1", familyId: "fam_no_ent" }, deps), "INTERNAL_ERROR");
     });
   });
 

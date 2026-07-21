@@ -210,9 +210,36 @@ describe("domain/group/createGroup", () => {
 
       expect(result.features).toEqual(getFeatures("active"));
     });
+
+    it("throws INTERNAL_ERROR when the caller's family has no Entitlements record", async () => {
+      const deps = buildDeps();
+      deps.userRepo.seed("u1", { familyId: "fam_no_entitlements00", role: "parent", displayName: "Eric" });
+      // Deliberately NOT seeding entitlementsRepo for fam_no_entitlements00.
+
+      await expectAppError(
+        createGroup({ uid: "u1", body: { name: "Crew", endsAt: VALID_ENDS_AT, expiryPolicy: "delete" } }, deps),
+        "INTERNAL_ERROR",
+      );
+    });
   });
 
   describe("validation (001 §12.1)", () => {
+    it("accepts expiryPolicy grace", async () => {
+      const deps = buildDeps();
+
+      const result = await createGroup({ uid: "u1", body: { ...VALID_BODY, expiryPolicy: "grace" } }, deps);
+
+      expect(result.expiryPolicy).toBe("grace");
+    });
+
+    it("accepts expiryPolicy archive", async () => {
+      const deps = buildDeps();
+
+      const result = await createGroup({ uid: "u1", body: { ...VALID_BODY, expiryPolicy: "archive" } }, deps);
+
+      expect(result.expiryPolicy).toBe("archive");
+    });
+
     it('throws VALIDATION_FAILED with details.fields: ["name"] for an empty name', async () => {
       const deps = buildDeps();
 
