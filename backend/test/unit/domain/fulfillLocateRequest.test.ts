@@ -180,6 +180,18 @@ describe("domain/locate/fulfillLocateRequest", () => {
     expect(deps.historyStore.fixes.length).toBe(0);
   });
 
+  it("throws DEVICE_NOT_FOUND when the caller's own partition holds a mismatched-owner row (002 §2.4 data-integrity defense-in-depth)", async () => {
+    // Deliberately seeded under the CALLER's own partition (TARGET_UID) but with a
+    // different ownerUserId field — structurally shouldn't happen (every write keys by
+    // its own ownerUserId), kept as a belt-and-suspenders check alongside the SECURITY
+    // test above (which relies on partition isolation itself, not this field check).
+    const deps = buildDeps();
+    deps.deviceRepo.seed(TARGET_UID, device({ ownerUserId: "someone-else" }));
+    deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
+
+    await expectAppError(fulfillLocateRequest(baseInput(), deps), "DEVICE_NOT_FOUND");
+  });
+
   it("legit path: caller owns the device AND it equals targetDeviceId -> succeeds", async () => {
     const deps = buildDeps();
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));

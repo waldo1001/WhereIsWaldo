@@ -162,6 +162,19 @@ describe("domain/locate/createLocateRequest", () => {
     expect(result.targetDeviceId).toBe(DEVICE_A);
   });
 
+  it("resolves the SPECIFIC targetDeviceId requested among several fanned-out family devices, not just the first one found (002 §2.4 fan-out)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    // DEVICE_A listed first in insertion order — the fan-out match must be by id, not
+    // "whichever device happened to be first".
+    deps.deviceRepo.seed(TARGET_UID, device({ deviceId: DEVICE_A, trackingEnabled: true }));
+    deps.deviceRepo.seed(TARGET_UID, device({ deviceId: DEVICE_B, trackingEnabled: true }));
+
+    const result = await createLocateRequest(baseInput({ body: { targetDeviceId: DEVICE_B } }), deps);
+
+    expect(result.targetDeviceId).toBe(DEVICE_B);
+  });
+
   it("does not treat a data-integrity mismatched-owner row in the target's own partition as a candidate (defense-in-depth)", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
