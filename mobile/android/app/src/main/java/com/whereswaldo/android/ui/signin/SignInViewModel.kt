@@ -5,17 +5,18 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.whereswaldo.android.auth.AuthProvider
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 
 /** Thin Android `ViewModel` wrapper — all logic lives in [SignInStateHolder] (specs/003-android-
- * client.md §7, §14; same convention as `InvitesViewModel`). */
+ * client.md §7, §14; same convention as `InvitesViewModel`). [SignInStateHolder]'s resend-cooldown
+ * ticker runs on `viewModelScope`, cancelled automatically when this `ViewModel` is cleared. */
 class SignInViewModel(authProvider: AuthProvider) : ViewModel() {
-    private val stateHolder = SignInStateHolder(authProvider)
+    private val stateHolder = SignInStateHolder(authProvider, viewModelScope)
     val state: StateFlow<SignInUiState> = stateHolder.state
 
-    fun signIn(email: String, password: String) {
-        viewModelScope.launch { stateHolder.signIn(email, password) }
-    }
+    fun submitPhone(rawInput: String) = stateHolder.submitPhone(rawInput)
+    fun submitCode(code: String) = stateHolder.submitCode(code)
+    fun resend() = stateHolder.resend()
+    fun changeNumber() = stateHolder.changeNumber()
 }
 
 /** No DI framework (specs/003 §3) — a plain [ViewModelProvider.Factory]. */
