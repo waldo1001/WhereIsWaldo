@@ -42,12 +42,14 @@ async function seedTwoParentFamily(deps: ReturnType<typeof buildDeps>) {
   await deps.userRepo.createProfile("u2", { familyId: FAMILY_ID, role: "parent", displayName: "Noor" });
 }
 
+// specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId: seeds
+// under the owner's own partition.
 function seedDevice(
   deps: ReturnType<typeof buildDeps>,
   deviceId: string,
   ownerUserId: string,
 ): void {
-  deps.deviceRepo.seed(FAMILY_ID, {
+  deps.deviceRepo.seed(ownerUserId, {
     deviceId,
     ownerUserId,
     platform: "android",
@@ -63,7 +65,7 @@ function seedDevice(
 }
 
 describe("domain/family/removeMember", () => {
-  it("removes the member row, the profile, and the member's device registrations", async () => {
+  it("removes the member row, the profile, and the member's device registrations (own per-owner partition, 002 §2.4)", async () => {
     const deps = buildDeps();
     await seedTwoParentFamily(deps);
     seedDevice(deps, "device-u2-a", "u2");
@@ -75,7 +77,10 @@ describe("domain/family/removeMember", () => {
     const members = await deps.familyRepo.listMembers(FAMILY_ID);
     expect(members.map((m) => m.userId)).toEqual(["u1"]);
     expect(await deps.userRepo.getProfile("u2")).toBeNull();
-    const remainingDevices = await deps.deviceRepo.listDevices(FAMILY_ID);
+    // The removed member's ENTIRE partition is gone...
+    expect(await deps.deviceRepo.listDevices("u2")).toEqual([]);
+    // ...but the remaining member's own partition is untouched.
+    const remainingDevices = await deps.deviceRepo.listDevices("u1");
     expect(remainingDevices.map((d) => d.deviceId)).toEqual(["device-u1-a"]);
   });
 

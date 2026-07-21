@@ -1,4 +1,7 @@
 // specs/001 §3.6 — remove member (parent). Pure domain logic: no Azure/Google imports.
+// Devices are keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): the removed
+// member's device registrations live entirely in their OWN partition, so cleanup is a
+// single per-owner partition wipe — no familyId needed at all.
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
@@ -51,7 +54,7 @@ export async function removeMember(input: RemoveMemberInput, deps: RemoveMemberD
 
   await deps.familyRepo.removeMember(familyId, input.targetUserId);
   await deps.userRepo.deleteProfile(input.targetUserId);
-  await deps.deviceRepo.deleteDevicesByOwner(familyId, input.targetUserId);
+  await deps.deviceRepo.deleteDevicesByOwner(input.targetUserId);
 
   const now = deps.clock.now();
   await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));

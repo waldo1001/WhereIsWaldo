@@ -1,8 +1,9 @@
 // specs/001 §4.1 — register/update own device. Pure domain logic: no Azure/Google imports.
-// Devices are stored per-owner (002 §2.4): registration does not require a family (§1.5 step
-// 4). A family member's devices live in the shared family partition (unchanged, pre-existing
-// behavior); a family-less caller's devices live in their own uid partition — same DeviceRepo
-// port, just a different partition-key value, so no B8 re-key work is needed here.
+// Devices are stored per-owner (002 §2.4, B8 re-key): registration does not require a
+// family (§1.5 step 4). The partition is ALWAYS the caller's own uid — family membership
+// no longer changes the partition key at all, so a caller's own devices are isolated from
+// even their own family's other members (deviceId collisions across two different owners,
+// even within the same family, are simply two different partitions now — 002 §2.4).
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, registerDeviceRequestSchema } from "../../http/validate";
@@ -35,13 +36,13 @@ export async function registerDevice(
   input: RegisterDeviceInput,
   deps: RegisterDeviceDeps,
 ): Promise<RegisterDeviceResult> {
-  // The device partition: the shared family partition for family members, the caller's own
-  // uid for a family-less caller (002 §2.4 — "the partition is the owner").
-  const partitionKey = input.familyId ?? input.uid;
+  // The device partition is always the caller's own uid (002 §2.4 — "the partition is the
+  // owner"), family member or not.
+  const ownerUserId = input.uid;
 
   const body = parseOrThrow(registerDeviceRequestSchema, input.body);
 
-  const existing = await deps.deviceRepo.getDevice(partitionKey, body.deviceId);
+  const existing = await deps.deviceRepo.getDevice(ownerUserId, body.deviceId);
   if (existing && existing.ownerUserId !== input.uid) {
     throw new AppError("VALIDATION_FAILED", "deviceId is registered to a different user", {
       reason: "deviceIdInUse",
@@ -63,7 +64,7 @@ export async function registerDevice(
   const now = deps.clock.now().toISOString();
 
   if (!existing) {
-    const count = await deps.deviceRepo.countDevices(partitionKey);
+    const count = await deps.deviceRepo.countDevices(ownerUserId);
     if (count >= features.limits.maxDevices) {
       throw new AppError("LIMIT_EXCEEDED", "device cap reached", { limit: "maxDevices" });
     }
@@ -83,7 +84,7 @@ export async function registerDevice(
       registeredAt: now,
       lastSeenAt: now,
     };
-    await deps.deviceRepo.putDevice(partitionKey, record);
+    await deps.deviceRepo.putDevice(ownerUserId, record);
     return { created: true, device: toDeviceView(record), features };
   }
 
@@ -103,6 +104,6 @@ export async function registerDevice(
     trackingEnabled: existing.trackingEnabled,
     deviceName: existing.deviceName,
   };
-  await deps.deviceRepo.putDevice(partitionKey, updated);
+  await deps.deviceRepo.putDevice(ownerUserId, updated);
   return { created: false, device: toDeviceView(updated), features };
 }

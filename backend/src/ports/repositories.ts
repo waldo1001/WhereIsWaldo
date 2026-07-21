@@ -92,7 +92,12 @@ export interface InviteRepo {
 }
 
 // ---------------------------------------------------------------------------
-// Devices (specs/002 §2.4, specs/001 §4.1 — this task; §4.2/§4.3 later)
+// Devices (specs/002 §2.4, specs/001 §4.1) — re-keyed to PK=ownerUserId (B8, specs/002 §2.4).
+// Devices belong to users, not families: every method's partition-key argument is the
+// device's OWNER's own userId — never a familyId. Family-wide reads (001 §4.2 listing,
+// §5.2 live map, §6.1 locate-flow target resolution, §8.2/§8.4 push fan-out) are a
+// `Families` roster scan plus one small per-member partition scan each, issued in
+// parallel (src/domain/family/deviceFanout.ts) — never a single shared partition.
 // ---------------------------------------------------------------------------
 
 export type DevicePlatform = "android" | "ios";
@@ -114,19 +119,20 @@ export interface DeviceRecord {
 }
 
 export interface DeviceRepo {
-  getDevice(familyId: string, deviceId: string): Promise<DeviceRecord | null>;
+  getDevice(ownerUserId: string, deviceId: string): Promise<DeviceRecord | null>;
   /** Full upsert write — the domain computes the final merged state (001 §4.1). */
-  putDevice(familyId: string, device: DeviceRecord): Promise<void>;
-  /** Partition scan = family device list (001 §4.2), push fan-out (§8.2/§8.4). */
-  listDevices(familyId: string): Promise<DeviceRecord[]>;
-  /** Partition scan count = the device-cap check (001 §4.1). */
-  countDevices(familyId: string): Promise<number>;
-  /** Removes all device registrations owned by a user within a family (001 §3.6). */
-  deleteDevicesByOwner(familyId: string, userId: string): Promise<void>;
+  putDevice(ownerUserId: string, device: DeviceRecord): Promise<void>;
+  /** Partition scan = one owner's devices (001 §4.1 cap, §4.2/§5.2/§6.1/§8 fan-out inputs). */
+  listDevices(ownerUserId: string): Promise<DeviceRecord[]>;
+  /** Partition scan count = the per-user device-cap check (001 §4.1). */
+  countDevices(ownerUserId: string): Promise<number>;
+  /** Removes every device registration in the owner's partition (001 §3.6). */
+  deleteDevicesByOwner(ownerUserId: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
-// LastKnown (specs/002 §2.5, specs/001 §5.2) — later task (B2)
+// LastKnown (specs/002 §2.5, specs/001 §5.2) — re-keyed to PK=ownerUserId (B8), same
+// owner-partition rule as Devices above.
 // ---------------------------------------------------------------------------
 
 export type FixSource = "periodic" | "locate" | "geofence" | "manual";
@@ -146,11 +152,11 @@ export interface LastKnownRecord {
 }
 
 export interface LastKnownRepo {
-  get(familyId: string, deviceId: string): Promise<LastKnownRecord | null>;
+  get(ownerUserId: string, deviceId: string): Promise<LastKnownRecord | null>;
   /** Overwrite only if incoming recordedAt > stored recordedAt; returns whether it wrote (002 §2.5). */
-  upsertIfNewer(familyId: string, record: LastKnownRecord): Promise<boolean>;
-  /** Whole-family partition scan (001 §5.2). */
-  listByFamily(familyId: string): Promise<LastKnownRecord[]>;
+  upsertIfNewer(ownerUserId: string, record: LastKnownRecord): Promise<boolean>;
+  /** One owner's partition scan (001 §5.2 fan-out input). */
+  listByOwner(ownerUserId: string): Promise<LastKnownRecord[]>;
 }
 
 // ---------------------------------------------------------------------------

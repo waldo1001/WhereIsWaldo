@@ -80,7 +80,7 @@ describe("domain/location/latestLocations", () => {
       displayName: "Noor",
       joinedAt: "2026-07-01T00:00:00Z",
     });
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d2", ownerUserId: "u2", deviceName: "Noor's phone" }));
+    deps.deviceRepo.seed("u2", device({ deviceId: "d2", ownerUserId: "u2", deviceName: "Noor's phone" }));
 
     const result = await latestLocations({ familyId: FAMILY_ID }, deps);
 
@@ -111,8 +111,8 @@ describe("domain/location/latestLocations", () => {
       displayName: "Eric",
       joinedAt: "2026-07-01T00:00:00Z",
     });
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.deviceRepo.seed("u1", device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
+    deps.lastKnownRepo.seed("u1", {
       deviceId: "d1",
       lat: 51.0543,
       lon: 3.7174,
@@ -152,8 +152,8 @@ describe("domain/location/latestLocations", () => {
       displayName: "Eric",
       joinedAt: "2026-07-01T00:00:00Z",
     });
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.deviceRepo.seed("u1", device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
+    deps.lastKnownRepo.seed("u1", {
       deviceId: "d1",
       lat: 51.0,
       lon: 3.7,
@@ -178,8 +178,8 @@ describe("domain/location/latestLocations", () => {
       displayName: "Eric",
       joinedAt: "2026-07-01T00:00:00Z",
     });
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
-    deps.lastKnownRepo.seed(FAMILY_ID, {
+    deps.deviceRepo.seed("u1", device({ deviceId: "d1", ownerUserId: "u1", syncIntervalMinutes: 15 }));
+    deps.lastKnownRepo.seed("u1", {
       deviceId: "d1",
       lat: 51.0,
       lon: 3.7,
@@ -204,13 +204,72 @@ describe("domain/location/latestLocations", () => {
       displayName: "Eric",
       joinedAt: "2026-07-01T00:00:00Z",
     });
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d1", ownerUserId: "u1" }));
-    deps.deviceRepo.seed(FAMILY_ID, device({ deviceId: "d2", ownerUserId: "u1", deviceName: "Eric's tablet" }));
+    deps.deviceRepo.seed("u1", device({ deviceId: "d1", ownerUserId: "u1" }));
+    deps.deviceRepo.seed("u1", device({ deviceId: "d2", ownerUserId: "u1", deviceName: "Eric's tablet" }));
 
     const result = await latestLocations({ familyId: FAMILY_ID }, deps);
 
     const eric = result.members.find((m) => m.userId === "u1");
     expect(eric?.devices.map((d) => d.deviceId).sort()).toEqual(["d1", "d2"]);
+  });
+
+  it("fans out devices AND last-knowns per-member across per-owner partitions, not a single shared family partition (002 §2.4/§2.5)", async () => {
+    const deps = await buildDeps();
+    await deps.familyRepo.addMember(FAMILY_ID, {
+      userId: "u1",
+      role: "parent",
+      displayName: "Eric",
+      joinedAt: "2026-07-01T00:00:00Z",
+    });
+    await deps.familyRepo.addMember(FAMILY_ID, {
+      userId: "u2",
+      role: "member",
+      displayName: "Noor",
+      joinedAt: "2026-07-01T00:00:00Z",
+    });
+    deps.deviceRepo.seed("u1", device({ deviceId: "d1", ownerUserId: "u1" }));
+    deps.deviceRepo.seed("u2", device({ deviceId: "d2", ownerUserId: "u2", deviceName: "Noor's phone" }));
+    deps.lastKnownRepo.seed("u1", {
+      deviceId: "d1",
+      lat: 1,
+      lon: 1,
+      accuracyM: 5,
+      batteryPct: 50,
+      recordedAt: "2026-07-19T09:20:00Z",
+      receivedAt: "2026-07-19T09:20:01Z",
+      source: "periodic",
+    });
+    deps.lastKnownRepo.seed("u2", {
+      deviceId: "d2",
+      lat: 2,
+      lon: 2,
+      accuracyM: 5,
+      batteryPct: 60,
+      recordedAt: "2026-07-19T09:25:00Z",
+      receivedAt: "2026-07-19T09:25:01Z",
+      source: "periodic",
+    });
+    // A device+last-known pair belonging to a stranger outside this family entirely — must
+    // never be picked up, since fan-out only ever visits THIS family's roster partitions.
+    deps.deviceRepo.seed("stranger", device({ deviceId: "d-stranger", ownerUserId: "stranger" }));
+    deps.lastKnownRepo.seed("stranger", {
+      deviceId: "d-stranger",
+      lat: 99,
+      lon: 99,
+      accuracyM: 5,
+      batteryPct: 10,
+      recordedAt: "2026-07-19T09:29:00Z",
+      receivedAt: "2026-07-19T09:29:01Z",
+      source: "periodic",
+    });
+
+    const result = await latestLocations({ familyId: FAMILY_ID }, deps);
+
+    expect(result.members.map((m) => m.userId).sort()).toEqual(["u1", "u2"]);
+    const eric = result.members.find((m) => m.userId === "u1");
+    const noor = result.members.find((m) => m.userId === "u2");
+    expect(eric?.devices[0]?.lat).toBe(1);
+    expect(noor?.devices[0]?.lat).toBe(2);
   });
 
   it("increments the apiCalls usage metric", async () => {

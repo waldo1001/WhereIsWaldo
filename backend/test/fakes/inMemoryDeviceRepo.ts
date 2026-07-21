@@ -1,46 +1,43 @@
 import type { DeviceRecord, DeviceRepo } from "../../src/ports/repositories";
 
+// specs/002 §2.4 — Devices keyed by owner (B8 re-key): every partition is one user's own
+// devices, so a "delete all devices for this owner" (001 §3.6) is simply clearing that
+// whole partition — no per-row ownerUserId filter needed anymore.
 export class InMemoryDeviceRepo implements DeviceRepo {
   private readonly devices = new Map<string, Map<string, DeviceRecord>>();
 
-  private partition(familyId: string): Map<string, DeviceRecord> {
-    let roster = this.devices.get(familyId);
+  private partition(ownerUserId: string): Map<string, DeviceRecord> {
+    let roster = this.devices.get(ownerUserId);
     if (!roster) {
       roster = new Map();
-      this.devices.set(familyId, roster);
+      this.devices.set(ownerUserId, roster);
     }
     return roster;
   }
 
-  seed(familyId: string, device: DeviceRecord): void {
-    this.partition(familyId).set(device.deviceId, { ...device });
+  seed(ownerUserId: string, device: DeviceRecord): void {
+    this.partition(ownerUserId).set(device.deviceId, { ...device });
   }
 
-  async getDevice(familyId: string, deviceId: string): Promise<DeviceRecord | null> {
-    const device = this.devices.get(familyId)?.get(deviceId);
+  async getDevice(ownerUserId: string, deviceId: string): Promise<DeviceRecord | null> {
+    const device = this.devices.get(ownerUserId)?.get(deviceId);
     return device ? { ...device } : null;
   }
 
-  async putDevice(familyId: string, device: DeviceRecord): Promise<void> {
-    this.partition(familyId).set(device.deviceId, { ...device });
+  async putDevice(ownerUserId: string, device: DeviceRecord): Promise<void> {
+    this.partition(ownerUserId).set(device.deviceId, { ...device });
   }
 
-  async listDevices(familyId: string): Promise<DeviceRecord[]> {
-    const roster = this.devices.get(familyId);
+  async listDevices(ownerUserId: string): Promise<DeviceRecord[]> {
+    const roster = this.devices.get(ownerUserId);
     return roster ? [...roster.values()].map((d) => ({ ...d })) : [];
   }
 
-  async countDevices(familyId: string): Promise<number> {
-    return this.devices.get(familyId)?.size ?? 0;
+  async countDevices(ownerUserId: string): Promise<number> {
+    return this.devices.get(ownerUserId)?.size ?? 0;
   }
 
-  async deleteDevicesByOwner(familyId: string, userId: string): Promise<void> {
-    const roster = this.devices.get(familyId);
-    if (!roster) return;
-    for (const [deviceId, device] of roster) {
-      if (device.ownerUserId === userId) {
-        roster.delete(deviceId);
-      }
-    }
+  async deleteDevicesByOwner(ownerUserId: string): Promise<void> {
+    this.devices.delete(ownerUserId);
   }
 }

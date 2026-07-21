@@ -4,20 +4,26 @@
 // (member role, in a family) may set only pushToken on their OWN device — any other field
 // is AUTH_FORBIDDEN, and so is targeting a device they don't own; a family-less owner may
 // set any field of their own device (no family => no parent => the user is their own admin,
-// §1.5 step 4). The device is looked up in the caller's partition — the shared family
-// partition for members, the caller's own uid for a family-less caller (002 §2.4) — so a
-// family-less caller can never even reference another user's deviceId (DEVICE_NOT_FOUND).
+// §1.5 step 4). Devices are keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): the
+// device is first looked up in the CALLER's own partition (covers the common case — own
+// device, any role); only when that misses AND the caller has a family do we fan out across
+// every family member's partition (src/domain/family/deviceFanout.ts) to find a device that
+// belongs to someone else — the only way a parent can reach another member's device. A
+// family-less caller never has a family to fan out over, so they can never even reference
+// another user's deviceId (DEVICE_NOT_FOUND).
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, patchDeviceSettingsRequestSchema } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { DeviceRecord, DeviceRepo, EntitlementsRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { DeviceRecord, DeviceRepo, EntitlementsRepo, FamilyRepo, Role, UsageRepo } from "../../ports/repositories";
 import type { PushSender } from "../../ports/pushSender";
 import { getFeatures, type Features } from "../plan";
+import { findDeviceInFamily } from "../family/deviceFanout";
 import { toDeviceView, type DeviceView } from "./deviceView";
 
 export interface PatchDeviceSettingsDeps {
   deviceRepo: DeviceRepo;
+  familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
   usageRepo: UsageRepo;
   pushSender: PushSender;
@@ -47,9 +53,14 @@ export async function patchDeviceSettings(
   input: PatchDeviceSettingsInput,
   deps: PatchDeviceSettingsDeps,
 ): Promise<PatchDeviceSettingsResult> {
-  const partitionKey = input.familyId ?? input.uid;
-
-  const device = await deps.deviceRepo.getDevice(partitionKey, input.deviceId);
+  // Own partition first (covers the common case: own device, any role, family or not).
+  let device = await deps.deviceRepo.getDevice(input.uid, input.deviceId);
+  if (!device && input.familyId) {
+    // Not the caller's own device — only reachable at all if a parent is editing another
+    // family member's device, so fan out across the family's per-owner partitions.
+    const members = await deps.familyRepo.listMembers(input.familyId);
+    device = await findDeviceInFamily(members, input.deviceId, deps.deviceRepo);
+  }
   if (!device) {
     throw new AppError("DEVICE_NOT_FOUND", "unknown deviceId");
   }
@@ -109,10 +120,14 @@ export async function patchDeviceSettings(
     deviceName: patch.deviceName ?? device.deviceName,
     pushToken: patch.pushToken ?? device.pushToken,
   };
-  await deps.deviceRepo.putDevice(partitionKey, updated);
+  // Write back into the DEVICE OWNER's own partition (002 §2.4) — not necessarily the
+  // caller's, since a parent may be editing another member's device.
+  await deps.deviceRepo.putDevice(updated.ownerUserId, updated);
 
+  // Usage (002 §2.9) stays familyId-keyed (or the caller's own uid family-less) — unrelated
+  // to the Devices/LastKnown re-key.
   const now = deps.clock.now();
-  await deps.usageRepo.increment(partitionKey, "apiCalls", usageDate(now));
+  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   if (settingsChanged && updated.pushToken && !updated.pushInvalid) {
     try {
@@ -126,7 +141,7 @@ export async function patchDeviceSettings(
         },
       });
       if (outcome === "invalidToken") {
-        await deps.deviceRepo.putDevice(partitionKey, { ...updated, pushInvalid: true });
+        await deps.deviceRepo.putDevice(updated.ownerUserId, { ...updated, pushInvalid: true });
       }
     } catch {
       // Best-effort accelerator (§4.3) — never fails the request (§10 PUSH_DELIVERY_FAILED note).

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { patchDeviceSettings } from "../../../src/domain/device/patchDeviceSettings";
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FakePushSender } from "../../fakes/fakePushSender";
@@ -16,6 +17,7 @@ function buildDeps() {
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
   return {
     deviceRepo: new InMemoryDeviceRepo(),
+    familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo,
     usageRepo: new InMemoryUsageRepo(),
     pushSender: new FakePushSender(),
@@ -23,11 +25,9 @@ function buildDeps() {
   };
 }
 
-function seedDevice(
-  deps: ReturnType<typeof buildDeps>,
-  partitionKey: string,
-  overrides: Partial<DeviceRecord> = {},
-) {
+// specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId. Seeds
+// under the record's own ownerUserId partition (defaulting to "u1").
+function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<DeviceRecord> = {}): DeviceRecord {
   const device: DeviceRecord = {
     deviceId: DEVICE_ID,
     ownerUserId: "u1",
@@ -43,14 +43,36 @@ function seedDevice(
     lastSeenAt: "2026-07-01T00:00:00Z",
     ...overrides,
   };
-  deps.deviceRepo.seed(partitionKey, device);
+  deps.deviceRepo.seed(device.ownerUserId, device);
   return device;
 }
 
+async function seedFamily(deps: ReturnType<typeof buildDeps>): Promise<void> {
+  await deps.familyRepo.createFamily({
+    familyId: FAMILY_ID,
+    familyName: "Wauters",
+    createdBy: "u1",
+    createdAt: "2026-07-19T08:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u1",
+    role: "parent",
+    displayName: "Eric",
+    joinedAt: "2026-07-19T08:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u2",
+    role: "member",
+    displayName: "Noor",
+    joinedAt: "2026-07-19T08:30:00Z",
+  });
+}
+
 describe("domain/device/patchDeviceSettings", () => {
-  it("a parent may update any field of any family member's device", async () => {
+  it("a parent may update any field of any family member's device, found by fanning out across the family's per-owner partitions (002 §2.4)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u2" });
+    await seedFamily(deps);
+    seedDevice(deps, { ownerUserId: "u2" });
 
     const result = await patchDeviceSettings(
       {
@@ -68,11 +90,14 @@ describe("domain/device/patchDeviceSettings", () => {
       trackingEnabled: false,
       deviceName: "Noor's tablet",
     });
+    // Written back into the DEVICE OWNER's own partition, not the caller's.
+    const stored = await deps.deviceRepo.getDevice("u2", DEVICE_ID);
+    expect(stored?.syncIntervalMinutes).toBe(30);
   });
 
   it("sends a SETTINGS_CHANGED push carrying the full current state when syncIntervalMinutes/trackingEnabled actually change", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+    seedDevice(deps, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
 
     await patchDeviceSettings(
       {
@@ -95,7 +120,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("sends a push when only trackingEnabled changes (syncIntervalMinutes untouched)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+    seedDevice(deps, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
 
     await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
@@ -108,20 +133,20 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("leaves pushInvalid false after a successful (non-invalidToken) push", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", pushInvalid: false, syncIntervalMinutes: 15 });
+    seedDevice(deps, { pushToken: "device-token", pushInvalid: false, syncIntervalMinutes: 15 });
 
     await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { syncIntervalMinutes: 30 } },
       deps,
     );
 
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
     expect(stored?.pushInvalid).toBe(false);
   });
 
   it("sends no push when neither syncIntervalMinutes nor trackingEnabled actually changed", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+    seedDevice(deps, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
 
     await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { deviceName: "New name" } },
@@ -133,7 +158,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("sends no push when the new values equal the ones already stored (no real change)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 30, trackingEnabled: true });
+    seedDevice(deps, { pushToken: "device-token", syncIntervalMinutes: 30, trackingEnabled: true });
 
     await patchDeviceSettings(
       {
@@ -151,7 +176,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("sends no push when the device has no pushToken", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: undefined, syncIntervalMinutes: 15 });
+    seedDevice(deps, { pushToken: undefined, syncIntervalMinutes: 15 });
 
     await patchDeviceSettings(
       {
@@ -169,7 +194,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("sends no push when the device's pushToken is already marked invalid", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", pushInvalid: true, syncIntervalMinutes: 15 });
+    seedDevice(deps, { pushToken: "device-token", pushInvalid: true, syncIntervalMinutes: 15 });
 
     await patchDeviceSettings(
       {
@@ -187,7 +212,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("marks the device pushInvalid on an invalidToken push outcome (§8.5 hygiene)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15 });
+    seedDevice(deps, { pushToken: "device-token", syncIntervalMinutes: 15 });
     deps.pushSender.setOutcome("invalidToken");
 
     await patchDeviceSettings(
@@ -201,13 +226,13 @@ describe("domain/device/patchDeviceSettings", () => {
       deps,
     );
 
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
     expect(stored?.pushInvalid).toBe(true);
   });
 
   it("a non-parent owner may update only pushToken on their own device", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+    seedDevice(deps, { ownerUserId: "u1" });
 
     const result = await patchDeviceSettings(
       {
@@ -221,13 +246,13 @@ describe("domain/device/patchDeviceSettings", () => {
     );
 
     expect(result.device.deviceId).toBe(DEVICE_ID);
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
     expect(stored?.pushToken).toBe("fresh-token");
   });
 
   it("throws AUTH_FORBIDDEN when a non-parent owner attempts syncIntervalMinutes", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+    seedDevice(deps, { ownerUserId: "u1" });
 
     await expectAppError(
       patchDeviceSettings(
@@ -246,7 +271,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("throws AUTH_FORBIDDEN when a non-parent owner attempts trackingEnabled (isolated from other restricted fields)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+    seedDevice(deps, { ownerUserId: "u1" });
 
     await expectAppError(
       patchDeviceSettings(
@@ -259,7 +284,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("throws AUTH_FORBIDDEN when a non-parent owner attempts deviceName (isolated from other restricted fields)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+    seedDevice(deps, { ownerUserId: "u1" });
 
     await expectAppError(
       patchDeviceSettings(
@@ -270,9 +295,10 @@ describe("domain/device/patchDeviceSettings", () => {
     );
   });
 
-  it("throws AUTH_FORBIDDEN when a non-parent, non-owner member targets someone else's device", async () => {
+  it("throws AUTH_FORBIDDEN when a non-parent, non-owner member targets someone else's device (found via family fan-out, 002 §2.4)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { ownerUserId: "u2" });
+    await seedFamily(deps);
+    seedDevice(deps, { ownerUserId: "u2" });
 
     await expectAppError(
       patchDeviceSettings(
@@ -289,9 +315,24 @@ describe("domain/device/patchDeviceSettings", () => {
     );
   });
 
+  it("throws DEVICE_NOT_FOUND when a non-parent member references a deviceId that belongs to no one in their family (fan-out finds nothing, not just AUTH_FORBIDDEN masking)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    // Seeded under a stranger who is NOT a member of this family — fan-out must not find it.
+    seedDevice(deps, { ownerUserId: "stranger" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "member", deviceId: DEVICE_ID, body: { pushToken: "x" } },
+        deps,
+      ),
+      "DEVICE_NOT_FOUND",
+    );
+  });
+
   it("a family-less owner may update any field of their own device (§4.3 family-less allowance)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, "u3", { ownerUserId: "u3" });
+    seedDevice(deps, { ownerUserId: "u3" });
 
     const result = await patchDeviceSettings(
       {
@@ -324,9 +365,9 @@ describe("domain/device/patchDeviceSettings", () => {
     );
   });
 
-  it("throws DEVICE_NOT_FOUND when a family-less caller references a deviceId outside their own partition", async () => {
+  it("throws DEVICE_NOT_FOUND when a family-less caller references a deviceId outside their own partition (no fan-out without a family)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, "someone-else", { ownerUserId: "someone-else" });
+    seedDevice(deps, { ownerUserId: "someone-else" });
 
     await expectAppError(
       patchDeviceSettings(
@@ -339,7 +380,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it('throws VALIDATION_FAILED with details.fields: ["syncIntervalMinutes"] for a value outside the allowed set', async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, {});
+    seedDevice(deps, {});
 
     await expectAppError(
       patchDeviceSettings(
@@ -353,7 +394,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("throws VALIDATION_FAILED when the body has no fields at all", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, {});
+    seedDevice(deps, {});
 
     await expectAppError(
       patchDeviceSettings({ uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: {} }, deps),
@@ -363,7 +404,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("accepts syncIntervalMinutes at the plan floor boundary (5, minSyncIntervalMinutes, §1.4/§9)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, {});
+    seedDevice(deps, {});
 
     const result = await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { syncIntervalMinutes: 5 } },
@@ -375,11 +416,12 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deviceRepo = new InMemoryDeviceRepo();
+    const familyRepo = new InMemoryFamilyRepo();
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
     const usageRepo = new InMemoryUsageRepo();
     const pushSender = new FakePushSender();
     const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
-    deviceRepo.seed(FAMILY_ID, {
+    deviceRepo.seed("u1", {
       deviceId: DEVICE_ID,
       ownerUserId: "u1",
       platform: "android",
@@ -396,7 +438,7 @@ describe("domain/device/patchDeviceSettings", () => {
     await expectAppError(
       patchDeviceSettings(
         { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
-        { deviceRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
       ),
       "INTERNAL_ERROR",
     );
@@ -404,7 +446,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("records usage metric apiCalls under the familyId for a family member", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, {});
+    seedDevice(deps, {});
 
     await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
@@ -417,7 +459,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("records usage metric apiCalls under the caller's own uid for a family-less caller", async () => {
     const deps = buildDeps();
-    seedDevice(deps, "u3", { ownerUserId: "u3" });
+    seedDevice(deps, { ownerUserId: "u3" });
 
     await patchDeviceSettings(
       { uid: "u3", familyId: null, role: null, deviceId: DEVICE_ID, body: { trackingEnabled: false } },
@@ -430,7 +472,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("never leaks pushToken/locationPushToken in the response (write-only, §4.1)", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { pushToken: "secret", locationPushToken: "secret-loc" });
+    seedDevice(deps, { pushToken: "secret", locationPushToken: "secret-loc" });
 
     const result = await patchDeviceSettings(
       {
@@ -449,7 +491,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("preserves fields not present in the patch body", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { model: "Pixel 8", appVersion: "1.0.0", deviceName: "Eric's phone" });
+    seedDevice(deps, { model: "Pixel 8", appVersion: "1.0.0", deviceName: "Eric's phone" });
 
     const result = await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
@@ -461,7 +503,7 @@ describe("domain/device/patchDeviceSettings", () => {
 
   it("preserves a truthy trackingEnabled when the patch body omits it", async () => {
     const deps = buildDeps();
-    seedDevice(deps, FAMILY_ID, { trackingEnabled: true });
+    seedDevice(deps, { trackingEnabled: true });
 
     const result = await patchDeviceSettings(
       { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { deviceName: "New name" } },

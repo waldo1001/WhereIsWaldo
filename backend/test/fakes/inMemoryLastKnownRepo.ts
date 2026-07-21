@@ -1,29 +1,31 @@
 import type { LastKnownRecord, LastKnownRepo } from "../../src/ports/repositories";
 
+// specs/002 §2.5 — LastKnown keyed by owner (B8 re-key): same owner-partition rule as
+// InMemoryDeviceRepo.
 export class InMemoryLastKnownRepo implements LastKnownRepo {
   private readonly records = new Map<string, Map<string, LastKnownRecord>>();
 
-  private partition(familyId: string): Map<string, LastKnownRecord> {
-    let roster = this.records.get(familyId);
+  private partition(ownerUserId: string): Map<string, LastKnownRecord> {
+    let roster = this.records.get(ownerUserId);
     if (!roster) {
       roster = new Map();
-      this.records.set(familyId, roster);
+      this.records.set(ownerUserId, roster);
     }
     return roster;
   }
 
   /** Seeds a record bypassing the only-newer rule (test setup helper). */
-  seed(familyId: string, record: LastKnownRecord): void {
-    this.partition(familyId).set(record.deviceId, { ...record });
+  seed(ownerUserId: string, record: LastKnownRecord): void {
+    this.partition(ownerUserId).set(record.deviceId, { ...record });
   }
 
-  async get(familyId: string, deviceId: string): Promise<LastKnownRecord | null> {
-    const record = this.records.get(familyId)?.get(deviceId);
+  async get(ownerUserId: string, deviceId: string): Promise<LastKnownRecord | null> {
+    const record = this.records.get(ownerUserId)?.get(deviceId);
     return record ? { ...record } : null;
   }
 
-  async upsertIfNewer(familyId: string, record: LastKnownRecord): Promise<boolean> {
-    const roster = this.partition(familyId);
+  async upsertIfNewer(ownerUserId: string, record: LastKnownRecord): Promise<boolean> {
+    const roster = this.partition(ownerUserId);
     const existing = roster.get(record.deviceId);
     if (existing && new Date(existing.recordedAt).getTime() >= new Date(record.recordedAt).getTime()) {
       return false;
@@ -32,8 +34,8 @@ export class InMemoryLastKnownRepo implements LastKnownRepo {
     return true;
   }
 
-  async listByFamily(familyId: string): Promise<LastKnownRecord[]> {
-    const roster = this.records.get(familyId);
+  async listByOwner(ownerUserId: string): Promise<LastKnownRecord[]> {
+    const roster = this.records.get(ownerUserId);
     return roster ? [...roster.values()].map((r) => ({ ...r })) : [];
   }
 }

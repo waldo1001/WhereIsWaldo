@@ -6,6 +6,7 @@ import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
 import type { DeviceRepo, EntitlementsRepo, FamilyRepo, UsageRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
+import { listDevicesForMembers } from "../family/deviceFanout";
 import { toDeviceView, type DeviceView } from "./deviceView";
 
 export interface ListMyDevicesDeps {
@@ -47,7 +48,9 @@ export async function listMyDevices(input: ListMyDevicesInput, deps: ListMyDevic
 
     const members = await deps.familyRepo.listMembers(familyId);
     const displayNameByUserId = new Map(members.map((m) => [m.userId, m.displayName]));
-    const devices = await deps.deviceRepo.listDevices(familyId);
+    // Devices are keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): fan out one
+    // small partition scan per member instead of a single shared family scan.
+    const devices = await listDevicesForMembers(members, deps.deviceRepo);
 
     await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 

@@ -19,11 +19,13 @@ function buildDeps() {
   };
 }
 
+// specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId. Seeds
+// under the record's own ownerUserId partition (defaulting to "u1", the usual caller).
 function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<Parameters<InMemoryDeviceRepo["seed"]>[1]>) {
-  deps.deviceRepo.seed(FAMILY_ID, {
+  const device = {
     deviceId: "seed-device",
     ownerUserId: "u1",
-    platform: "android",
+    platform: "android" as const,
     model: "Pixel",
     appVersion: "1.0.0",
     deviceName: "Pixel",
@@ -33,7 +35,8 @@ function seedDevice(deps: ReturnType<typeof buildDeps>, overrides: Partial<Param
     registeredAt: "2026-07-01T00:00:00Z",
     lastSeenAt: "2026-07-01T00:00:00Z",
     ...overrides,
-  });
+  };
+  deps.deviceRepo.seed(device.ownerUserId, device);
 }
 
 describe("domain/device/registerDevice", () => {
@@ -99,7 +102,7 @@ describe("domain/device/registerDevice", () => {
       trackingEnabled: false,
       deviceName: "Noor's phone",
     });
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
     expect(stored?.pushToken).toBe("new-token");
   });
 
@@ -120,7 +123,7 @@ describe("domain/device/registerDevice", () => {
       deps,
     );
 
-    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
     expect(stored?.pushToken).toBe("existing-push-token");
     expect(stored?.locationPushToken).toBe("existing-location-token");
   });
@@ -341,9 +344,26 @@ describe("domain/device/registerDevice", () => {
     expect(result.created).toBe(true);
   });
 
-  it('throws VALIDATION_FAILED with details.reason "deviceIdInUse" when the deviceId belongs to another user', async () => {
+  it('throws VALIDATION_FAILED with details.reason "deviceIdInUse" when the caller\'s own partition holds a mismatched-owner row (002 §2.4 data-integrity defense-in-depth)', async () => {
+    // Post-re-key, Devices partitions are per-owner, so a genuine cross-user deviceId
+    // collision can no longer surface via a point read in the caller's own partition (see
+    // the isolation test below — that's now the expected, intentional behavior). This
+    // check only guards the residual case where the caller's OWN partition somehow holds
+    // an entity whose ownerUserId field disagrees with the partition (data corruption).
     const deps = buildDeps();
-    seedDevice(deps, { deviceId: DEVICE_ID, ownerUserId: "someone-else", deviceName: "Someone's phone" });
+    deps.deviceRepo.seed("u1", {
+      deviceId: DEVICE_ID,
+      ownerUserId: "someone-else",
+      platform: "android",
+      model: "Someone's phone",
+      appVersion: "1.0.0",
+      deviceName: "Someone's phone",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
 
     await expectAppError(
       registerDevice(
@@ -357,6 +377,34 @@ describe("domain/device/registerDevice", () => {
       "VALIDATION_FAILED",
       { reason: "deviceIdInUse" },
     );
+  });
+
+  it("allows two DIFFERENT members of the SAME family to register the same deviceId without conflict (002 §2.4 re-key: per-owner partitions, not a shared family partition)", async () => {
+    const deps = buildDeps();
+
+    const first = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "u1's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+    const second = await registerDevice(
+      {
+        uid: "u2",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "ios", model: "u2's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(true);
+    const u1Device = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    const u2Device = await deps.deviceRepo.getDevice("u2", DEVICE_ID);
+    expect(u1Device?.model).toBe("u1's phone");
+    expect(u2Device?.model).toBe("u2's phone");
   });
 
   it("throws LIMIT_EXCEEDED with details.limit maxDevices at the plan cap", async () => {
