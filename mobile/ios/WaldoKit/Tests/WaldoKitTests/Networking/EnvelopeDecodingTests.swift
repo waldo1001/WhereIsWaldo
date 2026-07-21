@@ -62,4 +62,46 @@ struct EnvelopeDecodingTests {
         #expect(envelope.error.code == .authMissingToken)
         #expect(envelope.error.details == nil)
     }
+
+    /// specs/004-ios-client.md §3.1 — `Features`/`PlanLimits`/`PlanFlags` mirror 001 §9 exactly,
+    /// incl. the specs/005 group limits and `flags.groups`. A pre-groups fixture (no group keys at
+    /// all) must still decode — the new fields default to `nil`/`false`.
+    @Test func decodesFeatures_preGroupsFixture_defaultsGroupFieldsToNilAndFalse() throws {
+        let json = """
+        { "data": {}, "features": { "subscriptionStatus": "free",
+                      "limits": { "maxDevices": 10, "maxGeofences": 20, "historyDays": 90,
+                                  "minSyncIntervalMinutes": 5, "locateRequestsPerDay": 100 },
+                      "flags": { "pushToLocate": true, "geofencing": true, "historyReplay": true } } }
+        """.data(using: .utf8)!
+
+        struct Empty: Decodable {}
+        let envelope = try decoder.decode(Envelope<Empty>.self, from: json)
+
+        #expect(envelope.features.limits.maxActiveGroups == nil)
+        #expect(envelope.features.limits.maxGroupMembers == nil)
+        #expect(envelope.features.limits.maxGroupDurationDays == nil)
+        #expect(envelope.features.limits.groupGraceDays == nil)
+        #expect(envelope.features.flags.groups == false)
+    }
+
+    /// The 001 §9 example with every group-era field populated.
+    @Test func decodesFeatures_withGroupFieldsPopulated() throws {
+        let json = """
+        { "data": {}, "features": { "subscriptionStatus": "free",
+                      "limits": { "maxDevices": 10, "maxGeofences": 20, "historyDays": 90,
+                                  "minSyncIntervalMinutes": 5, "locateRequestsPerDay": 100,
+                                  "maxActiveGroups": 5, "maxGroupMembers": 50,
+                                  "maxGroupDurationDays": 30, "groupGraceDays": 7 },
+                      "flags": { "pushToLocate": true, "geofencing": true, "historyReplay": true, "groups": true } } }
+        """.data(using: .utf8)!
+
+        struct Empty: Decodable {}
+        let envelope = try decoder.decode(Envelope<Empty>.self, from: json)
+
+        #expect(envelope.features.limits.maxActiveGroups == 5)
+        #expect(envelope.features.limits.maxGroupMembers == 50)
+        #expect(envelope.features.limits.maxGroupDurationDays == 30)
+        #expect(envelope.features.limits.groupGraceDays == 7)
+        #expect(envelope.features.flags.groups == true)
+    }
 }

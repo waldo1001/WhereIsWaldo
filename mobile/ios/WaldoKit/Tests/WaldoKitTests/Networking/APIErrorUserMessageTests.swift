@@ -27,6 +27,24 @@ struct APIErrorUserMessageTests {
         #expect(!error.userFacingMessage.isEmpty)
     }
 
+    /// specs/005-temporary-groups.md — the six group-era codes must each map to a distinct,
+    /// non-empty, non-leaking user-facing message (same rule as every other code).
+    @Test func groupEraCodes_eachProduceASpecificMessage() {
+        let cases: [(APIErrorCode, contains: String)] = [
+            (.profileNotFound, "profile"),
+            (.groupNotFound, "group"),
+            (.groupAlreadyMember, "group"),
+            (.groupFull, "full"),
+            (.groupExpired, "ended"),
+            (.groupCodeInvalid, "code"),
+        ]
+        for (code, needle) in cases {
+            let error = APIError.server(APIErrorBody(code: code, message: "raw debug text", details: nil, requestId: "r1"), httpStatus: 400)
+            #expect(error.userFacingMessage.lowercased().contains(needle), "\(code) message should mention '\(needle)'")
+            #expect(!error.userFacingMessage.contains("raw debug text"))
+        }
+    }
+
     @Test func nonAPIError_getsAGenericFallbackMessage() {
         struct SomeOtherError: Error {}
         #expect(userFacingMessage(for: SomeOtherError()) == "Something went wrong. Please try again.")

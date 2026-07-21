@@ -1,8 +1,8 @@
 import Foundation
 
-/// The complete specs/001-api-contract.md client (§1.6 endpoint index — every one of the 19
-/// endpoints, specs/004-ios-client.md §3.2). Mockable for tests; `URLSessionAPIClient` is the real
-/// `URLSession`-backed implementation.
+/// The complete specs/001-api-contract.md client (§1.6 endpoint index — every one of the 29
+/// endpoints incl. the 10 groups ones from specs/005-temporary-groups.md, specs/004-ios-client.md
+/// §3.2). Mockable for tests; `URLSessionAPIClient` is the real `URLSession`-backed implementation.
 public protocol WaldoAPIClient {
     // §3 — Family management
     func createFamily(familyName: String, displayName: String) async throws -> Envelope<CreateFamilyResponse>
@@ -38,4 +38,16 @@ public protocol WaldoAPIClient {
     func getGeofenceEventHistory(
         from: String, to: String, userId: String?, limit: Int?, cursor: String?
     ) async throws -> Envelope<GeofenceEventHistoryResponse>
+
+    // §12 — Groups (temporary, specs/005-temporary-groups.md)
+    func createGroup(name: String, endsAt: String, expiryPolicy: String, displayName: String?) async throws -> Envelope<GroupSummary>
+    func listGroups() async throws -> Envelope<ListGroupsResponse>
+    func getGroup(groupId: String) async throws -> Envelope<GroupDetail>
+    func updateGroup(groupId: String, name: String?, endsAt: String?) async throws -> Envelope<GroupSummary>
+    func deleteGroup(groupId: String) async throws
+    func joinGroup(code: String, displayName: String?) async throws -> Envelope<GroupSummary>
+    func rotateGroupCode(groupId: String) async throws -> Envelope<RotateGroupCodeResponse>
+    func leaveGroup(groupId: String) async throws
+    func removeGroupMember(groupId: String, userId: String) async throws
+    func getGroupLatestLocations(groupId: String) async throws -> Envelope<GroupLatestLocationsResponse>
 }
