@@ -20,6 +20,13 @@ export type GroupState = "active" | "ended" | "archived" | "expired";
  * only" (no extra owner-entitlement reads); `maxGroupMembers` remains the one owner-plan
  * exception, per 001 §9.
  */
+/** `endsAt + groupGraceDays`, in epoch ms — the instant a `grace`-policy group flips from
+ * `ended` to `expired` (005 §2.2). Exported so the sweeper (B12, 002 §4.1 step 4) can compute
+ * the re-bucket target date without duplicating this arithmetic. */
+export function graceUntilMs(endsAt: string, groupGraceDays: number): number {
+  return new Date(endsAt).getTime() + groupGraceDays * 24 * 60 * 60 * 1000;
+}
+
 export function deriveGroupState(
   now: Date,
   endsAt: string,
@@ -42,6 +49,5 @@ export function deriveGroupState(
   }
 
   // policy === "grace"
-  const graceUntilMs = endsAtMs + groupGraceDays * 24 * 60 * 60 * 1000;
-  return nowMs < graceUntilMs ? "ended" : "expired";
+  return nowMs < graceUntilMs(endsAt, groupGraceDays) ? "ended" : "expired";
 }

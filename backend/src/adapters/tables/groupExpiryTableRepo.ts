@@ -1,9 +1,9 @@
 // specs/002 §2.13 `GroupExpiry` table — the sweeper's index. Integration-tested later; no
 // unit tests here (thin adapter, excluded from mutation).
 
-import { RestError } from "@azure/data-tables";
+import { odata, RestError } from "@azure/data-tables";
 import { createTableClient } from "./tableClientFactory";
-import type { GroupExpiryAction, GroupExpiryRepo } from "../../ports/repositories";
+import type { GroupExpiryAction, GroupExpiryRepo, GroupExpiryRow } from "../../ports/repositories";
 
 function isNotFound(err: unknown): boolean {
   return err instanceof RestError && err.statusCode === 404;
@@ -30,5 +30,18 @@ export class TableGroupExpiryRepo implements GroupExpiryRepo {
     } catch (err) {
       if (!isNotFound(err)) throw err;
     }
+  }
+
+  async listByDate(bucketDate: string): Promise<GroupExpiryRow[]> {
+    // The sweeper's bucket walk (002 §2.13/§4.1): a single tiny partition scan per date, never
+    // a full table scan.
+    const rows: GroupExpiryRow[] = [];
+    const entities = this.client.listEntities({
+      queryOptions: { filter: odata`PartitionKey eq ${bucketDate}` },
+    });
+    for await (const entity of entities) {
+      rows.push({ groupId: String(entity.rowKey), action: entity.action as GroupExpiryAction });
+    }
+    return rows;
   }
 }

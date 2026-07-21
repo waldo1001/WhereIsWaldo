@@ -1,4 +1,4 @@
-import type { GroupExpiryAction, GroupExpiryRepo } from "../../src/ports/repositories";
+import type { GroupExpiryAction, GroupExpiryRepo, GroupExpiryRow } from "../../src/ports/repositories";
 
 export class InMemoryGroupExpiryRepo implements GroupExpiryRepo {
   private readonly rows = new Map<string, { bucketDate: string; groupId: string; action: GroupExpiryAction }>();
@@ -10,6 +10,16 @@ export class InMemoryGroupExpiryRepo implements GroupExpiryRepo {
   async deleteExpiryRow(bucketDate: string, groupId: string): Promise<void> {
     // Idempotent no-op if the row isn't at this bucket (002 §2.13 self-healing note).
     this.rows.delete(`${bucketDate}:${groupId}`);
+  }
+
+  async listByDate(bucketDate: string): Promise<GroupExpiryRow[]> {
+    const matches: GroupExpiryRow[] = [];
+    for (const row of this.rows.values()) {
+      if (row.bucketDate === bucketDate) {
+        matches.push({ groupId: row.groupId, action: row.action });
+      }
+    }
+    return matches;
   }
 
   /** Test-only accessor — not part of the GroupExpiryRepo port. */

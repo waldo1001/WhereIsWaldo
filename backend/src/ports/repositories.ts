@@ -318,6 +318,11 @@ export interface GroupCodeRepo {
 
 export type GroupExpiryAction = "expire" | "hardDelete";
 
+export interface GroupExpiryRow {
+  groupId: string;
+  action: GroupExpiryAction;
+}
+
 export interface GroupExpiryRepo {
   /** Writes the `{bucketDate}:{groupId}` row (002 §2.13) — bucket is the UTC date
    * (`yyyy-MM-dd`) of the group's next lifecycle action. */
@@ -327,6 +332,9 @@ export interface GroupExpiryRepo {
    * by design: the row may already be at a different bucket (a prior partial move or a sweeper
    * pass) — callers MUST tolerate this as a harmless no-op (002 §2.13's self-healing note). */
   deleteExpiryRow(bucketDate: string, groupId: string): Promise<void>;
+  /** Partition scan of one `{bucketDate}` bucket — the sweeper's bucket walk (002 §2.13/§4.1,
+   * B12): "a handful of tiny date-partition scans — never a full table scan." */
+  listByDate(bucketDate: string): Promise<GroupExpiryRow[]>;
 }
 
 // ---------------------------------------------------------------------------
