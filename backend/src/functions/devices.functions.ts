@@ -53,7 +53,7 @@ app.http("registerDevice", {
       const body: unknown = await request.json().catch(() => ({}));
       const result = await registerDevice(
         { uid: auth.uid, familyId: auth.familyId, body },
-        { deviceRepo, entitlementsRepo, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, clock },
       );
       return {
         status: result.created ? 201 : 200,

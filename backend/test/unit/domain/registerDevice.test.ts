@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { registerDevice } from "../../../src/domain/device/registerDevice";
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -14,9 +15,34 @@ function buildDeps() {
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
   return {
     deviceRepo: new InMemoryDeviceRepo(),
+    familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo,
     clock: new FixedClock(new Date("2026-07-19T09:05:00Z")),
   };
+}
+
+// specs/002 §2.4 (B8 re-key) + specs/001 §4.1 (deviceIdInUse restored family-wide) —
+// registration-time collision checks fan out across the family roster, so tests exercising
+// that need an actual family + membership seeded.
+async function seedFamily(deps: ReturnType<typeof buildDeps>): Promise<void> {
+  await deps.familyRepo.createFamily({
+    familyId: FAMILY_ID,
+    familyName: "Wauters",
+    createdBy: "u1",
+    createdAt: "2026-07-19T08:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u1",
+    role: "parent",
+    displayName: "Eric",
+    joinedAt: "2026-07-19T08:00:00Z",
+  });
+  await deps.familyRepo.addMember(FAMILY_ID, {
+    userId: "u2",
+    role: "member",
+    displayName: "Noor",
+    joinedAt: "2026-07-19T08:30:00Z",
+  });
 }
 
 // specs/002 §2.4 (B8 re-key) — Devices are keyed by ownerUserId, never familyId. Seeds
@@ -210,6 +236,7 @@ describe("domain/device/registerDevice", () => {
 
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deviceRepo = new InMemoryDeviceRepo();
+    const familyRepo = new InMemoryFamilyRepo();
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
     const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
 
@@ -220,7 +247,7 @@ describe("domain/device/registerDevice", () => {
           familyId: FAMILY_ID,
           body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel 8", appVersion: "1.0.0" },
         },
-        { deviceRepo, entitlementsRepo, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, clock },
       ),
       "INTERNAL_ERROR",
     );
@@ -379,33 +406,127 @@ describe("domain/device/registerDevice", () => {
     );
   });
 
-  it("allows two DIFFERENT members of the SAME family to register the same deviceId without conflict (002 §2.4 re-key: per-owner partitions, not a shared family partition)", async () => {
+  it('SECURITY: throws VALIDATION_FAILED "deviceIdInUse" when a family member deliberately re-registers a SIBLING\'s known deviceId under their own account (specs/001 §4.1 family-wide check)', async () => {
+    // Exploit scenario: a non-parent member reads GET /v1/devices (§4.2, open-family
+    // visibility — every member sees every other member's deviceId), learns a sibling's
+    // deviceId, then tries to claim that exact id under their own uid. Pre-B8 this was
+    // caught by the shared family partition; post-re-key it must be caught by an explicit
+    // family-wide fan-out check, or a later by-deviceId lookup (a parent's PATCH
+    // /devices/{deviceId}, a locate request's targetDeviceId) could silently resolve to
+    // the attacker's device instead of the sibling's.
     const deps = buildDeps();
-
-    const first = await registerDevice(
-      {
-        uid: "u1",
-        familyId: FAMILY_ID,
-        body: { deviceId: DEVICE_ID, platform: "android", model: "u1's phone", appVersion: "1.0.0" },
-      },
-      deps,
-    );
-    const second = await registerDevice(
+    await seedFamily(deps);
+    // Noor (u2) already has DEVICE_ID registered.
+    await registerDevice(
       {
         uid: "u2",
         familyId: FAMILY_ID,
-        body: { deviceId: DEVICE_ID, platform: "ios", model: "u2's phone", appVersion: "1.0.0" },
+        body: { deviceId: DEVICE_ID, platform: "ios", model: "Noor's phone", appVersion: "1.0.0" },
       },
       deps,
     );
 
-    expect(first.created).toBe(true);
-    expect(second.created).toBe(true);
+    // Eric (u1), a family member with visibility into Noor's deviceId via GET /devices,
+    // deliberately attempts to claim the exact same id.
+    await expectAppError(
+      registerDevice(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          body: { deviceId: DEVICE_ID, platform: "android", model: "Attacker's phone", appVersion: "1.0.0" },
+        },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { reason: "deviceIdInUse" },
+    );
+
+    // And no attacker-owned row was ever written under that id.
     const u1Device = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
-    const u2Device = await deps.deviceRepo.getDevice("u2", DEVICE_ID);
-    expect(u1Device?.model).toBe("u1's phone");
-    expect(u2Device?.model).toBe("u2's phone");
+    expect(u1Device).toBeNull();
   });
+
+  it("allows a NEW member's first-ever deviceId to register normally when no other family member holds it (baseline, not a false positive)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+
+    const result = await registerDevice(
+      {
+        uid: "u2",
+        familyId: FAMILY_ID,
+        body: { deviceId: OTHER_DEVICE_ID, platform: "ios", model: "Noor's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(true);
+  });
+
+  it("never runs the family-wide fan-out check on an upsert of the caller's own existing device (only a genuinely NEW registration needs the collision check)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Eric's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    let listMembersCalls = 0;
+    const originalListMembers = deps.familyRepo.listMembers.bind(deps.familyRepo);
+    deps.familyRepo.listMembers = async (familyId: string) => {
+      listMembersCalls++;
+      return originalListMembers(familyId);
+    };
+
+    // Re-registering (upsert) the SAME deviceId as the SAME owner — this is the frequent,
+    // routine path (every app launch/token-refresh/app-update, §4.1), so it must not pay
+    // for a family-wide fan-out it doesn't need.
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Eric's phone", appVersion: "1.0.1" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(false);
+    expect(listMembersCalls).toBe(0);
+  });
+
+  it("does not treat a stranger's device (not a member of this family) as a deviceIdInUse conflict — the fan-out only visits the family's roster partitions (002 §2.4)", async () => {
+    const deps = buildDeps();
+    await seedFamily(deps);
+    // Registered to someone entirely outside this family.
+    deps.deviceRepo.seed("stranger", {
+      deviceId: DEVICE_ID,
+      ownerUserId: "stranger",
+      platform: "ios",
+      model: "Stranger's phone",
+      appVersion: "1.0.0",
+      deviceName: "Stranger's phone",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Eric's phone", appVersion: "1.0.0" },
+      },
+      deps,
+    );
+
+    expect(result.created).toBe(true);
+  });
+
 
   it("throws LIMIT_EXCEEDED with details.limit maxDevices at the plan cap", async () => {
     const deps = buildDeps();

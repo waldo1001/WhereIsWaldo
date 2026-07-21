@@ -1,19 +1,27 @@
 // specs/001 §4.1 — register/update own device. Pure domain logic: no Azure/Google imports.
 // Devices are stored per-owner (002 §2.4, B8 re-key): registration does not require a
 // family (§1.5 step 4). The partition is ALWAYS the caller's own uid — family membership
-// no longer changes the partition key at all, so a caller's own devices are isolated from
-// even their own family's other members (deviceId collisions across two different owners,
-// even within the same family, are simply two different partitions now — 002 §2.4).
+// no longer changes the partition key at all.
+//
+// The deviceIdInUse conflict check (§1.4/§4.1) is family-wide when the caller has a
+// family: §4.2's open-family device listing lets every member read every other member's
+// deviceId, so without an explicit family-wide check a member could deliberately
+// re-register a sibling's known deviceId under their own account and hijack a later
+// by-deviceId lookup (a parent's PATCH /devices/{deviceId}, a locate request's
+// targetDeviceId). A family-less caller's check stays scoped to their own partition —
+// family-less deviceIds are never exposed to any other user, so no equivalent risk exists.
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, registerDeviceRequestSchema } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { DeviceRecord, DeviceRepo, EntitlementsRepo } from "../../ports/repositories";
+import type { DeviceRecord, DeviceRepo, EntitlementsRepo, FamilyRepo } from "../../ports/repositories";
+import { findDeviceInFamily } from "../family/deviceFanout";
 import { getFeatures, type Features } from "../plan";
 import { toDeviceView, type DeviceView } from "./deviceView";
 
 export interface RegisterDeviceDeps {
   deviceRepo: DeviceRepo;
+  familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
   clock: Clock;
 }
@@ -44,9 +52,25 @@ export async function registerDevice(
 
   const existing = await deps.deviceRepo.getDevice(ownerUserId, body.deviceId);
   if (existing && existing.ownerUserId !== input.uid) {
+    // Data-integrity defense-in-depth: the caller's own partition holding a row whose
+    // ownerUserId disagrees shouldn't structurally happen (every write keys by its own
+    // ownerUserId), but is checked anyway.
     throw new AppError("VALIDATION_FAILED", "deviceId is registered to a different user", {
       reason: "deviceIdInUse",
     });
+  }
+
+  // §1.4/§4.1 — family-wide deviceIdInUse check: reject if ANY other member of the same
+  // family already holds this deviceId (not just the caller's own partition), closing the
+  // visibility-driven collision risk opened by §4.2's open-family device listing.
+  if (!existing && input.familyId) {
+    const members = await deps.familyRepo.listMembers(input.familyId);
+    const conflict = await findDeviceInFamily(members, body.deviceId, deps.deviceRepo);
+    if (conflict && conflict.ownerUserId !== input.uid) {
+      throw new AppError("VALIDATION_FAILED", "deviceId is registered to a different user", {
+        reason: "deviceIdInUse",
+      });
+    }
   }
 
   let features: Features;
