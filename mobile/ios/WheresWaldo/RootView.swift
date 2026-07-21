@@ -4,22 +4,30 @@ import WaldoKit
 /// The composition root — the ONLY place that resolves `.light`/`.dark` from the system
 /// `colorScheme` and injects `\.theme` (specs/004-ios-client.md §2.2). Everything below this reads
 /// `\.theme`, never `colorScheme` directly. Also the ONLY place that constructs the `AuthProviding`
-/// implementation — swapping `StubAuthProvider` for `FirebaseAuthProvider` once H1 lands
-/// (specs/004 §4, §8) touches only this one line — and, as of I2, the single `WaldoAPIClient`
-/// instance every feature screen's view model is constructed with.
+/// implementation — `AppConfig.authMode` picks `StubAuthProvider` vs `FirebaseAuthProvider`
+/// (specs/004 §4.1, §8); switching to real Firebase once H1/H2 land is a config change at this one
+/// seam — and, as of I2, the single `WaldoAPIClient` instance every feature screen's view model is
+/// constructed with.
 struct RootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var coordinator: AppCoordinator
 
-    // H1 follow-up: real Firebase Auth SDK + GoogleService-Info.plist. Until then, the app runs
-    // against AppConfig.default's AuthMode.stubLocal, matching the backend's
-    // AUTH_MODE=insecure-local (specs/001 §2.3).
-    private let authProvider: AuthProviding = StubAuthProvider()
+    private let authProvider: AuthProviding
     private let apiClient: WaldoAPIClient
 
-    init(coordinator: AppCoordinator) {
+    // specs/004-ios-client.md §4.1, §8 — AuthMode.stubLocal (default) matches the backend's
+    // AUTH_MODE=insecure-local (specs/001 §2.3); AuthMode.firebase swaps in FirebaseAuthProvider,
+    // the H1/H2 follow-up (real Firebase Auth SDK + GoogleService-Info.plist + Firebase console
+    // phone-auth setup) — a config change only, no further code change at this seam.
+    init(coordinator: AppCoordinator, config: AppConfig = AppConfig()) {
         self.coordinator = coordinator
-        self.apiClient = URLSessionAPIClient(baseURL: AppConfig().baseURL, authProvider: authProvider)
+        switch config.authMode {
+        case .stubLocal:
+            self.authProvider = StubAuthProvider(firebaseProjectId: config.firebaseProjectId)
+        case .firebase:
+            self.authProvider = FirebaseAuthProvider()
+        }
+        self.apiClient = URLSessionAPIClient(baseURL: config.baseURL, authProvider: authProvider)
     }
 
     var body: some View {
