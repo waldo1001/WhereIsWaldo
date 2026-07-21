@@ -40,6 +40,31 @@ struct StubAuthProviderTests {
         #expect(provider.currentUserId == nil)
     }
 
+    @Test func confirmCode_withNoVerificationInFlight_throwsCodeExpired() async throws {
+        // No prior startPhoneVerification call — matches Android's DevAuthProvider/FirebaseAuthProvider
+        // (already merged, specs/006 §5/§4.2): "no session to confirm" reads as CODE_EXPIRED, which
+        // routes the ViewModel back to phone entry ("must request a new code"), not a generic UNKNOWN.
+        let provider = StubAuthProvider()
+        do {
+            try await provider.confirmCode("123456")
+            Issue.record("expected PhoneAuthError.codeExpired")
+        } catch let error as PhoneAuthError {
+            #expect(error == .codeExpired)
+        }
+    }
+
+    @Test func startPhoneVerification_defensivelyRevalidatesTheNumber_throwsInvalidPhoneNumberIfUnnormalizable() async throws {
+        // Callers (SignInViewModel) are expected to already have normalized the number (006 §3)
+        // before calling this — this is a defensive re-check, matching Android's DevAuthProvider.
+        let provider = StubAuthProvider()
+        do {
+            try await provider.startPhoneVerification(phoneNumberE164: "not-a-number")
+            Issue.record("expected PhoneAuthError.invalidPhoneNumber")
+        } catch let error as PhoneAuthError {
+            #expect(error == .invalidPhoneNumber)
+        }
+    }
+
     @Test func currentIDToken_throwsWhenNotSignedIn() async throws {
         let provider = StubAuthProvider()
         do {

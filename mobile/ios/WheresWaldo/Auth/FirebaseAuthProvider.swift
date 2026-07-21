@@ -57,8 +57,9 @@ final class FirebaseAuthProvider: AuthProviding {
     func confirmCode(_ code: String) async throws {
         guard let verificationID else {
             // No verification in flight (e.g. app relaunched mid-flow and UserDefaults was
-            // cleared) — surface as unknown rather than crash.
-            throw PhoneAuthError.unknown
+            // cleared) — reads as CODE_EXPIRED ("must request a new code"), matching Android's
+            // already-merged FirebaseAuthProvider/DevAuthProvider (specs/006 §4.2/§5).
+            throw PhoneAuthError.codeExpired
         }
         let credential = PhoneAuthProvider.provider().credential(withVerificationID: verificationID, verificationCode: code)
         do {

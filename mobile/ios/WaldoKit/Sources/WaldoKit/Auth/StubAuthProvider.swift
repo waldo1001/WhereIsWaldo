@@ -46,16 +46,24 @@ public final class StubAuthProvider: AuthProviding {
     }
 
     public func startPhoneVerification(phoneNumberE164: String) async throws {
-        pendingPhoneNumber = phoneNumberE164
+        // Defensive re-check (callers — `SignInViewModel` — are expected to already have
+        // normalized the number, 006 §3): matches Android's DevAuthProvider.
+        guard let normalized = PhoneNumberNormalizer.normalize(phoneNumberE164) else {
+            throw PhoneAuthError.invalidPhoneNumber
+        }
+        pendingPhoneNumber = normalized
     }
 
     public func confirmCode(_ code: String) async throws {
-        guard let phoneNumber = pendingPhoneNumber else {
-            // No verification in flight — nothing to confirm.
-            throw PhoneAuthError.unknown
-        }
         guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw PhoneAuthError.invalidCode
+        }
+        guard let phoneNumber = pendingPhoneNumber else {
+            // No verification in flight (e.g. confirmCode called with no prior/expired
+            // startPhoneVerification) — reads as CODE_EXPIRED, which routes the ViewModel back to
+            // phone entry ("must request a new code"), matching Android's DevAuthProvider/
+            // FirebaseAuthProvider (both already merged, specs/006 §5/§4.2).
+            throw PhoneAuthError.codeExpired
         }
         currentUserId = phoneNumber
         pendingPhoneNumber = nil
