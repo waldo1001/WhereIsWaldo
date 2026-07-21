@@ -52,7 +52,7 @@ Every **error** response:
 | `groupId` | `grp_` + 20 chars `[A-Za-z0-9]` (server-generated) |
 | `requestId` (locate) | `lr_` + 20 chars `[A-Za-z0-9]` (server-generated) |
 | `userId` | The Firebase Auth `uid`, opaque string |
-| `deviceId` | Client-generated UUIDv4, stable per app install **and per signed-in user** — clients MUST generate a fresh `deviceId` when the signed-in user changes. `POST /devices` with a `deviceId` owned by a different user → `400 VALIDATION_FAILED`, `details.reason: "deviceIdInUse"`. |
+| `deviceId` | Client-generated UUIDv4, stable per app install **and per signed-in user** — clients MUST generate a fresh `deviceId` when the signed-in user changes. `POST /devices` with a `deviceId` already registered to a different user → `400 VALIDATION_FAILED`, `details.reason: "deviceIdInUse"`, enforced **family-wide** when the registering user has a family (any other member's `deviceId`, not just the caller's own — §4.1); a family-less caller is checked only against their own prior registrations (their `deviceId`s are never exposed to any other user, unlike §4.2's open-family visibility, so no equivalent collision risk exists there). |
 | `batchId`, `fixId`, `eventId` | Client-generated UUIDv4 |
 | `geofenceId` | Client-chosen slug `gf_[a-z0-9-]{1,30}`, unique within the family config |
 | Invite code / group join code | Server-generated, 8 chars of Crockford base32 (no I/L/O/U). Canonical form: uppercase, no hyphen. Clients MAY display/accept `XXXX-XXXX`; the server accepts case-insensitively and ignores hyphens. Family invite codes are **single-use** (§3.3); group join codes are **multi-use** until the group ends or the code is rotated (§12.6–12.7). |
@@ -239,6 +239,8 @@ Clients MUST call this on: first launch after sign-in, every FCM token refresh, 
 ```
 
 New registrations count against `features.limits.maxDevices` — a **per-user** cap: the count is the registering user's own devices (→ `402 LIMIT_EXCEEDED`, `details.limit: "maxDevices"`); upserts of an existing `deviceId` never do. Push tokens (`pushToken`, `locationPushToken`) are write-only: they never appear in any response. Devices are stored per-owner (002 §2.4) — registration does not require a family.
+
+The `deviceIdInUse` conflict check (§1.4) is **family-wide** when the registering caller has a family: a new registration is rejected if the `deviceId` is already registered to *any other member of the same family*, not just the caller's own prior registrations (a fan-out check across the family's per-owner partitions, 002 §2.4 — same cost model as §4.2's listing and §8.2/§8.4's push fan-out). This closes a visibility-driven risk: §4.2's open-family device listing lets every member read every other member's `deviceId`, so without this check a member could deliberately re-register a sibling's known `deviceId` under their own account and silently hijack any later by-`deviceId` lookup (a parent's `PATCH /devices/{deviceId}`, §4.3; a locate request's `targetDeviceId`, §6.1) into resolving to the attacker's device instead. A family-less caller's `deviceIdInUse` check stays scoped to their own prior registrations only — family-less `deviceId`s are never exposed to any other user (§4.2 restricts a family-less caller's listing to their own devices), so no equivalent visibility channel — and therefore no equivalent collision risk — exists there.
 
 ### 4.2 List family devices — `GET /devices`
 

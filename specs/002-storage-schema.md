@@ -52,7 +52,7 @@ Accept flow (001 §3.4): point read → validate → **ETag-guarded merge** sett
 |---|---|---|
 | `{ownerUserId}` | `device:{deviceId}` | `platform`, `model`, `appVersion`, `deviceName`, `pushToken`, `pushInvalid` (bool), `syncIntervalMinutes`, `trackingEnabled`, `registeredAt`, `lastSeenAt` |
 
-Devices belong to **users**, not families (family-less users register devices too — 001 §1.5/§4.1): the partition is the owner, making the `X-Device-Id` ownership check (001 §1.2) a point read in the caller's own partition, and the `maxDevices` cap a per-user partition count (001 §4.1). Family-wide reads — the 001 §4.2 listing and the push fan-out list (001 §8.2/8.4) — are the `Families` roster scan plus one small per-member partition scan each, issued in parallel (bounded by family size). `lastSeenAt` is updated at most once per minute per device (write-skipping to save transactions).
+Devices belong to **users**, not families (family-less users register devices too — 001 §1.5/§4.1): the partition is the owner, making the `X-Device-Id` ownership check (001 §1.2) a point read in the caller's own partition, and the `maxDevices` cap a per-user partition count (001 §4.1). Family-wide reads — the 001 §4.2 listing, the push fan-out list (001 §8.2/8.4), and the §4.1 registration-time `deviceIdInUse` conflict check (against every other member, not just the caller) — are the `Families` roster scan plus one small per-member partition scan each, issued in parallel (bounded by family size). `lastSeenAt` is updated at most once per minute per device (write-skipping to save transactions).
 
 ### 2.5 `LastKnown` — keyed by owner
 
