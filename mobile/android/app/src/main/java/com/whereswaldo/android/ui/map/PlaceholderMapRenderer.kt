@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.clip
 import com.whereswaldo.android.ui.designsystem.WaldoTheme
 import com.whereswaldo.android.ui.designsystem.components.WaldoEmptyState
 import com.whereswaldo.android.ui.designsystem.components.WaldoMapMarkerBubble
+import com.whereswaldo.android.ui.groups.GroupMapMemberUi
 
 /**
  * The A2 stub [MapRenderer] (no Google Maps SDK/API key exists yet — H1-gated, see [MapRenderer]'s
@@ -46,6 +47,37 @@ class PlaceholderMapRenderer : MapRenderer {
                     WaldoMapMarkerBubble(
                         label = "$displayName · ${device.deviceName}",
                         isStale = device.isStale ?: false,
+                    )
+                }
+            }
+        }
+    }
+
+    /** A5 addition (specs/005-temporary-groups.md §3) — same placeholder-surface treatment as
+     * [Render], but position-only: no device name to compose into the label, just the member's
+     * display name. */
+    @Composable
+    override fun RenderGroup(members: List<GroupMapMemberUi>, modifier: Modifier) {
+        val located = members.filter { it.hasLocation }
+
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(WaldoTheme.corner.lg))
+                .background(WaldoTheme.colors.surfaceVariant)
+                .padding(WaldoTheme.spacing.md),
+            verticalArrangement = Arrangement.spacedBy(WaldoTheme.spacing.xs),
+        ) {
+            if (located.isEmpty()) {
+                WaldoEmptyState(
+                    title = "Map preview",
+                    message = "Real tiles land with H1 (docs/azure-setup.md).",
+                )
+            } else {
+                located.forEach { member ->
+                    WaldoMapMarkerBubble(
+                        label = member.displayName,
+                        isStale = member.isStale ?: false,
                     )
                 }
             }

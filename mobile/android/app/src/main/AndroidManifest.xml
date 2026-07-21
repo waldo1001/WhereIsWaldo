@@ -39,6 +39,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- A5 (specs/005-temporary-groups.md, specs/003-android-client.md §12.2): the
+                 app's first and only external deep link, waldo://group-join?code=XXXXXXXX. A
+                 custom scheme (not an android:autoVerify https App Link), so no digital-asset-
+                 links verification is needed; the `code` query param is untrusted input and is
+                 sanitized in WaldoNavHost/GroupJoinCodeSanitizer before any network call. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="waldo" android:host="group-join" />
+            </intent-filter>
         </activity>
 
     </application>
