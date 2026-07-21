@@ -1,4 +1,11 @@
 // specs/001 §5.1 — report locations (batch). Pure domain logic: no Azure/Google imports.
+// Unlike §5.2/§6/§7, §5.1 explicitly works WITHOUT a family (001 §1.5 step 4): Devices/
+// LastKnown are keyed by ownerUserId (002 §2.4/§2.5, B8 re-key), so the §1.2 ownership
+// check and the last-known upsert are always a point read/write in the caller's OWN
+// partition, family or not. Only the per-fix HISTORY append is gated on having a family
+// (005 §3's "group participation never creates durable location history"): a family-less
+// user's fixes update last-known only. geofenceEtag is the family-scoped config's ETag when
+// a family exists, else the fixed "0" sentinel (no config to sync, geofences are family-only).
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, reportLocationsRequestSchema, type LocationFixRequest } from "../../http/validate";
@@ -88,23 +95,26 @@ export async function reportLocations(
   input: ReportLocationsInput,
   deps: ReportLocationsDeps,
 ): Promise<ReportLocationsResult> {
-  if (!input.familyId) {
-    throw new AppError("FAMILY_NOT_FOUND", "caller has no family");
+  let features: Features;
+  if (input.familyId) {
+    const entitlements = await deps.entitlementsRepo.get(input.familyId);
+    if (!entitlements) {
+      throw new AppError("INTERNAL_ERROR", "family has no entitlements record");
+    }
+    features = getFeatures(entitlements.subscriptionStatus);
+  } else {
+    // Family-less callers have no Entitlements row — implicit free (001 §9, 002 §2.6).
+    features = getFeatures("free");
   }
-  const familyId = input.familyId;
-
-  const entitlements = await deps.entitlementsRepo.get(familyId);
-  if (!entitlements) {
-    throw new AppError("INTERNAL_ERROR", "family has no entitlements record");
-  }
-  const features = getFeatures(entitlements.subscriptionStatus);
 
   if (!input.deviceId) {
     throw new AppError("DEVICE_NOT_FOUND", "X-Device-Id header is required");
   }
   const deviceId = input.deviceId;
 
-  const device = await deps.deviceRepo.getDevice(familyId, deviceId);
+  // §1.2 ownership check: a point read in the caller's own partition (002 §2.4) — no
+  // family fan-out needed, since a device can only ever live in its owner's partition.
+  const device = await deps.deviceRepo.getDevice(input.uid, deviceId);
   if (!device || device.ownerUserId !== input.uid) {
     throw new AppError("DEVICE_NOT_FOUND", "X-Device-Id is not registered to the calling user");
   }
@@ -142,7 +152,8 @@ export async function reportLocations(
   }
 
   const receivedAt = now.toISOString();
-  const geofenceEtag = await deps.geofenceConfigRepo.getEtag(familyId);
+  // Geofences are family-scoped (§7.1) — a family-less caller has no config to sync.
+  const geofenceEtag = input.familyId ? await deps.geofenceConfigRepo.getEtag(input.familyId) : "0";
 
   const inserted = await deps.idempotencyRepo.tryInsertBatchMarker(deviceId, body.batchId, {
     receivedAt,
@@ -174,16 +185,24 @@ export async function reportLocations(
     receivedAt,
     source: newest.source,
   };
-  const lastKnownUpdated = await deps.lastKnownRepo.upsertIfNewer(familyId, lastKnownCandidate);
+  const lastKnownUpdated = await deps.lastKnownRepo.upsertIfNewer(input.uid, lastKnownCandidate);
 
-  for (const fix of body.fixes) {
-    await deps.historyStore.appendFix(familyId, input.uid, deviceId, buildFixLine(fix, receivedAt));
+  // History gate (005 §3, 001 §5.1): only appended when the caller has a family — a
+  // family-less user's fixes update last-known (and, later, group positions) only.
+  if (input.familyId) {
+    const familyId = input.familyId;
+    for (const fix of body.fixes) {
+      await deps.historyStore.appendFix(familyId, input.uid, deviceId, buildFixLine(fix, receivedAt));
+    }
   }
 
+  // Usage (002 §2.9) stays familyId-keyed, or the caller's own uid family-less — unrelated
+  // to the Devices/LastKnown re-key.
+  const usagePartition = input.familyId ?? input.uid;
   const date = usageDate(now);
-  await deps.usageRepo.increment(familyId, "apiCalls", date);
-  await deps.usageRepo.increment(familyId, "locationBatches", date);
-  await deps.usageRepo.increment(familyId, "fixes", date, body.fixes.length);
+  await deps.usageRepo.increment(usagePartition, "apiCalls", date);
+  await deps.usageRepo.increment(usagePartition, "locationBatches", date);
+  await deps.usageRepo.increment(usagePartition, "fixes", date, body.fixes.length);
 
   return {
     accepted: body.fixes.length,
