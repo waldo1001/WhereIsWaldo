@@ -7,7 +7,9 @@ data class DeviceSettingsSnapshot(val syncIntervalMinutes: Int, val trackingEnab
  * One subtype per 001-api-contract.md §10 catalog code, plus two client-local variants.
  * [ApiErrorMapper] is the single place that constructs these from a wire error code
  * (specs/003-android-client.md §6.1) — no other code should ever compare against a raw code
- * string.
+ * string. As of specs/005 (temporary groups), the catalog has grown from 21 to **27** codes: the
+ * six group-era additions are [ProfileNotFound], [GroupNotFound], [GroupAlreadyMember],
+ * [GroupFull], [GroupExpired], and [GroupCodeInvalid] (specs/003 §6.1).
  */
 sealed class ApiError {
     abstract val message: String
@@ -24,10 +26,17 @@ sealed class ApiError {
         override val requestId: String?,
     ) : ApiError()
 
+    /** Caller has no profile yet (endpoints outside the §1.5.3 bootstrap allowance). */
+    data class ProfileNotFound(override val message: String, override val requestId: String?) : ApiError()
+
     data class FamilyNotFound(override val message: String, override val requestId: String?) : ApiError()
     data class MemberNotFound(override val message: String, override val requestId: String?) : ApiError()
     data class DeviceNotFound(override val message: String, override val requestId: String?) : ApiError()
     data class LocateRequestNotFound(override val message: String, override val requestId: String?) : ApiError()
+
+    /** Unknown `groupId`, caller not a member of it (existence masked, §12), or already swept. */
+    data class GroupNotFound(override val message: String, override val requestId: String?) : ApiError()
+
     data class FamilyAlreadyMember(override val message: String, override val requestId: String?) : ApiError()
 
     data class GeofenceVersionConflict(
@@ -36,10 +45,27 @@ sealed class ApiError {
         override val requestId: String?,
     ) : ApiError()
 
+    /** Join a group the caller is already in (§12.6). */
+    data class GroupAlreadyMember(override val message: String, override val requestId: String?) : ApiError()
+
+    /** Roster at the owner-plan `maxGroupMembers` cap (§12.6, §9). */
+    data class GroupFull(
+        val max: Int?,
+        override val message: String,
+        override val requestId: String?,
+    ) : ApiError()
+
     data class InviteExpired(override val message: String, override val requestId: String?) : ApiError()
     data class LocateRequestExpired(override val message: String, override val requestId: String?) : ApiError()
+
+    /** Operation on a group past its usable life for that path (matrix in 005 §2.3, §12). */
+    data class GroupExpired(override val message: String, override val requestId: String?) : ApiError()
+
     data class InviteInvalid(override val message: String, override val requestId: String?) : ApiError()
     data class InviteAlreadyUsed(override val message: String, override val requestId: String?) : ApiError()
+
+    /** Unknown or rotated group join code (§12.6). */
+    data class GroupCodeInvalid(override val message: String, override val requestId: String?) : ApiError()
 
     data class ValidationFailed(
         val fields: List<String>?,

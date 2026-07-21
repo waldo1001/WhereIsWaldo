@@ -9,8 +9,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Asserts every single code in 001-api-contract.md §10's catalog (21 codes) maps to its own
- * named [ApiError] subtype — never [ApiError.Unknown] (specs/003-android-client.md §6.1, §16).
+ * Asserts every single code in 001-api-contract.md §10's catalog (27 codes — 21 original + the
+ * 6 group-era additions from specs/005) maps to its own named [ApiError] subtype — never
+ * [ApiError.Unknown] (specs/003-android-client.md §6.1, §16).
  */
 class ApiErrorMapperTest {
 
@@ -25,16 +26,22 @@ class ApiErrorMapperTest {
             "AUTH_TOKEN_EXPIRED" to ApiError.AuthTokenExpired::class.java,
             "AUTH_FORBIDDEN" to ApiError.AuthForbidden::class.java,
             "TRACKING_PAUSED" to ApiError.TrackingPaused::class.java,
+            "PROFILE_NOT_FOUND" to ApiError.ProfileNotFound::class.java,
             "FAMILY_NOT_FOUND" to ApiError.FamilyNotFound::class.java,
             "MEMBER_NOT_FOUND" to ApiError.MemberNotFound::class.java,
             "DEVICE_NOT_FOUND" to ApiError.DeviceNotFound::class.java,
             "LOCATE_REQUEST_NOT_FOUND" to ApiError.LocateRequestNotFound::class.java,
+            "GROUP_NOT_FOUND" to ApiError.GroupNotFound::class.java,
             "FAMILY_ALREADY_MEMBER" to ApiError.FamilyAlreadyMember::class.java,
             "GEOFENCE_VERSION_CONFLICT" to ApiError.GeofenceVersionConflict::class.java,
+            "GROUP_ALREADY_MEMBER" to ApiError.GroupAlreadyMember::class.java,
+            "GROUP_FULL" to ApiError.GroupFull::class.java,
             "INVITE_EXPIRED" to ApiError.InviteExpired::class.java,
             "LOCATE_REQUEST_EXPIRED" to ApiError.LocateRequestExpired::class.java,
+            "GROUP_EXPIRED" to ApiError.GroupExpired::class.java,
             "INVITE_INVALID" to ApiError.InviteInvalid::class.java,
             "INVITE_ALREADY_USED" to ApiError.InviteAlreadyUsed::class.java,
+            "GROUP_CODE_INVALID" to ApiError.GroupCodeInvalid::class.java,
             "VALIDATION_FAILED" to ApiError.ValidationFailed::class.java,
             "LOCATION_BATCH_TOO_LARGE" to ApiError.LocationBatchTooLarge::class.java,
             "LIMIT_EXCEEDED" to ApiError.LimitExceeded::class.java,
@@ -43,7 +50,7 @@ class ApiErrorMapperTest {
             "PUSH_DELIVERY_FAILED" to ApiError.PushDeliveryFailed::class.java,
         )
 
-        assertEquals("catalog has 21 codes (001 §10)", 21, expectations.size)
+        assertEquals("catalog has 27 codes (001 §10)", 27, expectations.size)
 
         expectations.forEach { (code, expectedClass) ->
             val mapped = map(code)
@@ -125,6 +132,22 @@ class ApiErrorMapperTest {
         val mapped = map("LOCATION_BATCH_TOO_LARGE", details) as ApiError.LocationBatchTooLarge
 
         assertEquals(100, mapped.max)
+    }
+
+    @Test
+    fun `GROUP_FULL decodes max from details`() {
+        val details = buildJsonObject { put("max", 50) }
+
+        val mapped = map("GROUP_FULL", details) as ApiError.GroupFull
+
+        assertEquals(50, mapped.max)
+    }
+
+    @Test
+    fun `GROUP_FULL missing details yields null max rather than throwing`() {
+        val mapped = map("GROUP_FULL", details = null) as ApiError.GroupFull
+
+        assertEquals(null, mapped.max)
     }
 
     @Test
