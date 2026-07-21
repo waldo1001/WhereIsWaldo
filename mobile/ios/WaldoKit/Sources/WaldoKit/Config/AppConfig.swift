@@ -6,10 +6,20 @@ import Foundation
 public struct AppConfig: Equatable {
     public var baseURL: URL
     public var authMode: AuthMode
+    /// specs/006-phone-auth.md §5 — feeds `StubAuthProvider`'s fake `iss`/`aud` claims in dev mode
+    /// (`iss = "https://securetoken.google.com/<firebaseProjectId>"`, `aud = firebaseProjectId`).
+    /// A dev default is fine here: H1 supplies the real Firebase project id via the app target's
+    /// build configuration, never by editing this default.
+    public var firebaseProjectId: String
 
-    public init(baseURL: URL = AppConfig.placeholderBaseURL, authMode: AuthMode = .stubLocal) {
+    public init(
+        baseURL: URL = AppConfig.placeholderBaseURL,
+        authMode: AuthMode = .stubLocal,
+        firebaseProjectId: String = "wheres-waldo-dev"
+    ) {
         self.baseURL = baseURL
         self.authMode = authMode
+        self.firebaseProjectId = firebaseProjectId
     }
 
     /// Obviously non-resolving placeholder — H1 supplies the real Azure Functions base URL via
