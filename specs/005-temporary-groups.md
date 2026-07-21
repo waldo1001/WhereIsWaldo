@@ -58,9 +58,14 @@ Reactivation during grace = `PATCH endsAt` to a future instant (001 §12.4) — 
 | `POST /groups/join` | yes | `410 GROUP_EXPIRED` | `410 GROUP_EXPIRED` | `400 GROUP_CODE_INVALID` (code row gone) |
 | location ingest fan-out (001 §5.1) | yes | no | no | no |
 | `PATCH` `endsAt` (owner) | yes | yes (reactivate) | no (`410`) | no |
-| `leave` / kick / owner `DELETE` | yes | yes | yes | `410` / `404` |
+| `POST .../code/rotate` (owner) | yes | yes | yes | `410` / `404` |
+| `leave` / kick / owner `DELETE`¹ | yes | yes | yes | `410` / `404` |
 
 Grace hides the roster from non-owner members (the group is over; the owner sees it to decide on reactivation) — the design intent is "read-only and fading", not "still a group".
+
+Rotate is gated like leave/kick rather than like `PATCH`: allowed on `active`/`ended` (grace)/`archived`, rejected only once truly `expired` (`410`, or `404` once swept) — not blocked on `archived` the way `PATCH endsAt` is. Rationale: rotating a code doesn't conflict with any archived-specific invariant the way extending `endsAt` would (there is no "reactivate archived" concept to protect against); it's a plain code-management action, same category as leave/kick's plain membership-management actions.
+
+¹ Owner `DELETE` is a carve-out that does **not** follow this row's `expired` column: per §12.5, §2.4 above, and 002 §4.1's sweeper description, owner `DELETE` performs the full hard delete "in any state, regardless of policy" — including a not-yet-swept `expired` group. It works whenever `Groups.meta` still exists, full stop; only `leave`/kick are actually gated on `expired` (→ `410`/`404`). Read this row as "leave/kick behave exactly as shown; owner `DELETE` also succeeds on `expired`, uniquely among the three."
 
 ### 2.4 Physical deletion — the sweeper
 
