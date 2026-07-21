@@ -276,6 +276,31 @@ describe("domain/group/joinGroup", () => {
         fields: ["(root)"],
       });
     });
+
+    it("throws VALIDATION_FAILED for a code over 16 chars, never reaching the code repo", async () => {
+      const deps = buildDeps();
+
+      await expectAppError(
+        joinGroup({ uid: "u2", body: { code: "x".repeat(17), displayName: "Noor" } }, deps),
+        "VALIDATION_FAILED",
+        { fields: ["code"] },
+      );
+    });
+
+    it.each([
+      ["a/b", "forward slash"],
+      ["a\\b", "backslash"],
+      ["a#b", "hash"],
+      ["a?b", "question mark"],
+    ])("throws VALIDATION_FAILED for a code containing a forbidden %s, never reaching the code repo", async (malformed) => {
+      const deps = buildDeps();
+
+      await expectAppError(
+        joinGroup({ uid: "u2", body: { code: malformed, displayName: "Noor" } }, deps),
+        "VALIDATION_FAILED",
+        { fields: ["code"] },
+      );
+    });
   });
 
   describe("features resolution", () => {

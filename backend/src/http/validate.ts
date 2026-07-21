@@ -177,10 +177,19 @@ export const createGroupRequestSchema = z.object({
 export type CreateGroupRequest = z.infer<typeof createGroupRequestSchema>;
 
 // specs/001 §12.6 — join group. code is canonicalized by the domain (uppercase, no hyphen,
-// same as inviteCode) after this schema only checks presence; displayName optional (same
-// bootstrap rule as createGroupRequestSchema above).
+// same as inviteCode) AFTER this schema validates its raw shape — 16 chars comfortably
+// covers the 8-char canonical form plus the "XXXX-XXXX" hyphenated display form, and the
+// same Table-Storage-key character gate as groupIdParamSchema/memberUserIdParamSchema
+// applies here too: the normalized code is used verbatim as a GroupCodes PartitionKey
+// (002 §2.11), so an unvalidated value could otherwise reach the table adapter and surface
+// a raw SDK RestError as 500 instead of a clean 400 (docs/security-review-checklist.md).
+// displayName optional (same bootstrap rule as createGroupRequestSchema above).
 export const joinGroupRequestSchema = z.object({
-  code: z.string().min(1),
+  code: z
+    .string()
+    .min(1)
+    .max(16)
+    .regex(ALLOWED_TABLE_KEY_CHARS, "code contains characters forbidden in a Table Storage key"),
   displayName: z.string().min(1).max(30).optional(),
 });
 export type JoinGroupRequest = z.infer<typeof joinGroupRequestSchema>;
