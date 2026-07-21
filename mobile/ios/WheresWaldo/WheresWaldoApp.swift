@@ -11,6 +11,12 @@ struct WheresWaldoApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(coordinator: coordinator)
+                // specs/004-ios-client.md §3.4 — the group-join deep link
+                // (waldo://group-join?code=…) is parsed/validated in WaldoKit
+                // (AppCoordinator.handleDeepLink, backed by the pure GroupCodeParsing); this is
+                // just the OS-lifecycle forwarding, the one piece of "logic" the app target is
+                // allowed (specs/004 §1.1).
+                .onOpenURL { url in coordinator.handleDeepLink(url) }
         }
     }
 }
