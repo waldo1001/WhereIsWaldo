@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { kickMember } from "../../../src/domain/group/kickMember";
 import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
+import { InMemoryGroupLastKnownRepo } from "../../fakes/inMemoryGroupLastKnownRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
@@ -13,6 +14,7 @@ const NOW = new Date("2026-07-21T10:00:00Z");
 function buildDeps() {
   return {
     groupRepo: new InMemoryGroupRepo(),
+    groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
     usageRepo: new InMemoryUsageRepo(),
@@ -109,6 +111,34 @@ describe("domain/group/kickMember", () => {
     expect(await deps.userRepo.listGroupMemberships("u9")).toEqual([]);
     // Owner's own membership is untouched.
     expect(await deps.groupRepo.getMember("grp_a", "u1")).not.toBeNull();
+  });
+
+  it("removes the kicked member's group position immediately (005 §7), leaving the owner's untouched", async () => {
+    const deps = buildDeps();
+    await seed(deps, ACTIVE_META);
+    deps.groupLastKnownRepo.seed("grp_a", {
+      userId: "u9",
+      lat: 51.05,
+      lon: 3.72,
+      accuracyM: 10,
+      recordedAt: "2026-07-21T09:00:00Z",
+      receivedAt: "2026-07-21T09:00:01Z",
+      syncIntervalMinutes: 15,
+    });
+    deps.groupLastKnownRepo.seed("grp_a", {
+      userId: "u1",
+      lat: 51.06,
+      lon: 3.73,
+      accuracyM: 11,
+      recordedAt: "2026-07-21T09:00:00Z",
+      receivedAt: "2026-07-21T09:00:01Z",
+      syncIntervalMinutes: 15,
+    });
+
+    await kickMember({ uid: "u1", familyId: null, groupId: "grp_a", targetUserId: "u9" }, deps);
+
+    const positions = await deps.groupLastKnownRepo.listByGroup("grp_a");
+    expect(positions.map((p) => p.userId)).toEqual(["u1"]);
   });
 
   it("works during grace (ended state)", async () => {

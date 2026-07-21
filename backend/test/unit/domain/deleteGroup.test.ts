@@ -3,6 +3,7 @@ import { deleteGroup } from "../../../src/domain/group/deleteGroup";
 import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryGroupCodeRepo } from "../../fakes/inMemoryGroupCodeRepo";
 import { InMemoryGroupExpiryRepo } from "../../fakes/inMemoryGroupExpiryRepo";
+import { InMemoryGroupLastKnownRepo } from "../../fakes/inMemoryGroupLastKnownRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
@@ -16,6 +17,7 @@ function buildDeps() {
     groupRepo: new InMemoryGroupRepo(),
     groupCodeRepo: new InMemoryGroupCodeRepo(),
     groupExpiryRepo: new InMemoryGroupExpiryRepo(),
+    groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
     userRepo: new InMemoryUserRepo(),
     usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
@@ -90,9 +92,27 @@ describe("domain/group/deleteGroup", () => {
     );
   });
 
-  it("hard-deletes meta, all member rows, the code row, both members' reverse-index rows, and the expiry row", async () => {
+  it("hard-deletes meta, all member rows, the code row, both members' reverse-index rows, the expiry row, and the GroupLastKnown partition", async () => {
     const deps = buildDeps();
     await seed(deps, ACTIVE_META);
+    deps.groupLastKnownRepo.seed("grp_a", {
+      userId: "u1",
+      lat: 51.05,
+      lon: 3.72,
+      accuracyM: 10,
+      recordedAt: "2026-07-21T09:00:00Z",
+      receivedAt: "2026-07-21T09:00:01Z",
+      syncIntervalMinutes: 15,
+    });
+    deps.groupLastKnownRepo.seed("grp_a", {
+      userId: "u9",
+      lat: 51.06,
+      lon: 3.73,
+      accuracyM: 12,
+      recordedAt: "2026-07-21T09:00:00Z",
+      receivedAt: "2026-07-21T09:00:01Z",
+      syncIntervalMinutes: 15,
+    });
 
     await deleteGroup({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
 
@@ -102,6 +122,7 @@ describe("domain/group/deleteGroup", () => {
     expect(await deps.userRepo.listGroupMemberships("u1")).toEqual([]);
     expect(await deps.userRepo.listGroupMemberships("u9")).toEqual([]);
     expect(deps.groupExpiryRepo.get("2026-08-02", "grp_a")).toBeUndefined();
+    expect(await deps.groupLastKnownRepo.listByGroup("grp_a")).toEqual([]);
   });
 
   it("succeeds regardless of derived state — archived group", async () => {

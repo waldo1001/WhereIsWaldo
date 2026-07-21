@@ -1,16 +1,19 @@
 // specs/001 §12.8 — leave a group (any member, not the owner). Bare 204 (no response body,
 // no `features`). Pure domain logic: no Azure/Google imports. "Works in any non-expired
 // state (clearing an archived memento is allowed)" — so `active`/`ended`/`archived` all
-// succeed, only a truly `expired` (not yet swept) group is rejected (410).
+// succeed, only a truly `expired` (not yet swept) group is rejected (410). "Removes the
+// caller's membership and their group position immediately" — the GroupLastKnown row is
+// removed alongside the membership rows (005 §7 test checklist).
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 
 export interface LeaveGroupDeps {
   groupRepo: GroupRepo;
+  groupLastKnownRepo: GroupLastKnownRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
   usageRepo: UsageRepo;
@@ -66,6 +69,7 @@ export async function leaveGroup(input: LeaveGroupInput, deps: LeaveGroupDeps): 
 
   await deps.groupRepo.removeMember(input.groupId, input.uid);
   await deps.userRepo.removeGroupMembership(input.uid, input.groupId);
+  await deps.groupLastKnownRepo.removeMember(input.groupId, input.uid);
 
   await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 }

@@ -353,4 +353,10 @@ export interface GroupLastKnownRepo {
   upsertIfNewer(groupId: string, record: GroupLastKnownRecord): Promise<boolean>;
   /** One groupId partition scan = the group map read (001 §12.10). */
   listByGroup(groupId: string): Promise<GroupLastKnownRecord[]>;
+  /** Deletes one member's position row — leave/kick (001 §12.8/§12.9, B10): "their position
+   * disappears from the group map immediately." Idempotent. */
+  removeMember(groupId: string, userId: string): Promise<void>;
+  /** Wipes the whole groupId partition — owner hard delete (001 §12.5, 002 §4.1 step 3, B10)
+   * and the sweeper's per-policy location cleanup (002 §4.1 steps 3-5, B12). Idempotent. */
+  deletePartition(groupId: string): Promise<void>;
 }
