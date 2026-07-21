@@ -55,7 +55,8 @@ Current coverage of the 002 §6 checklist:
 
 - ✅ Guarded-update races: `LastKnown` only-newer (`lastKnownRace.test.ts`), `Usage` increment retry (`usageIncrementRace.test.ts`).
 - ✅ Append interleaving (two concurrent writers to one day blob both land; reader sorts), the UTC-midnight day-blob split, cursor round-trip across a day boundary with multi-device merge, and event dedupe/filtering (`historyBlobStore.test.ts`).
-- ⏸ **Deferred, not yet possible on this branch:** invite single-use race (owned by task B3's `InvitesTableRepo`) and the geofence ETag flow incl. `"0"` sentinel + 412→409 (owned by task B5's full config read/write — today's `BlobGeofenceConfigRepo` only reads the ETag for the §5.1 piggyback). Neither adapter exists yet at the time of writing; add their integration tests to this same suite when those tasks merge.
+- ✅ Group sweeper (`groupSweeper.test.ts`, B12): bucket-walk + per-policy physical deletion (delete/grace/archive) against real `Groups`/`GroupCodes`/`GroupExpiry`/`GroupLastKnown`/`Users` rows, the grace two-phase transition end to end, crash-mid-hard-delete convergence (orphaned expiry row cleanup), and expiry-row re-bucket self-healing after a partial `PATCH endsAt` move.
+- ⏸ **Deferred, not yet possible on this branch:** invite single-use race (owned by task B3's `InvitesTableRepo`) and the geofence ETag flow incl. `"0"` sentinel + 412→409 (owned by task B5's full config read/write — today's `BlobGeofenceConfigRepo` only reads the ETag for the §5.1 piggyback). Neither adapter exists yet at the time of writing; add their integration tests to this same suite when those tasks merge. Also still missing (owned by B9/B10/B11, not this task): group join membership-insert race, code-rotate crash sequence, and `GroupLastKnown` only-newer race.
 
 ## TDD workflow (non-negotiable)
 
