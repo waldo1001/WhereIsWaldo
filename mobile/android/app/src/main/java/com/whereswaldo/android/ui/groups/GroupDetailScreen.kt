@@ -1,6 +1,7 @@
 package com.whereswaldo.android.ui.groups
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,10 +56,15 @@ private sealed class PendingGroupAction {
  * themes correctly (specs/003 §4.3, same rationale as `HistoryScreen`'s `DatePickerDialog`
  * exception): a modal-overlay primitive with real platform behavior, not a styling primitive.
  *
- * On `GROUP_EXPIRED` ([GroupDetailUiState.Expired]) or after a successful leave/delete
- * ([GroupDetailUiState.Content.left]), the screen bounces back to the groups list via [onLeft]
- * (specs/003 §12.2's "SHOULD bounce the user back to the groups list with a notice" — mirrors
- * [GroupMapScreen]'s identical `Expired` treatment).
+ * On `GROUP_EXPIRED` ([GroupDetailUiState.Expired]) the screen shows a brief [Toast] — the same
+ * visible notice [GroupMapScreen] gives on its identical `Expired` treatment (specs/003 §4.3's
+ * documented exception; the `Expired` state's own message alone would render for at most one
+ * composition frame before [onLeft] navigates away, effectively imperceptible) — and then bounces
+ * back to the groups list via [onLeft] (specs/003 §12.2's "SHOULD bounce the user back to the
+ * groups list with a notice"). After a successful leave/delete ([GroupDetailUiState.Content.left])
+ * the same [onLeft] fires with no `Toast` — that's a deliberate, already-confirmed user action
+ * (via an [AlertDialog] confirm or the plain "Leave group" button), not a surprise the user needs
+ * to be told about.
  */
 @Composable
 fun GroupDetailRoute(
@@ -68,11 +74,18 @@ fun GroupDetailRoute(
     onOpenMap: (groupId: String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(state) {
-        val shouldLeave = state is GroupDetailUiState.Expired ||
-            (state as? GroupDetailUiState.Content)?.left == true
-        if (shouldLeave) onLeft()
+        val expired = state as? GroupDetailUiState.Expired
+        if (expired != null) {
+            Toast.makeText(context, expired.message, Toast.LENGTH_SHORT).show()
+            onLeft()
+            return@LaunchedEffect
+        }
+        if ((state as? GroupDetailUiState.Content)?.left == true) {
+            onLeft()
+        }
     }
 
     GroupDetailScreen(
