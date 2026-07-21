@@ -1,0 +1,409 @@
+import { describe, expect, it } from "vitest";
+import { patchDeviceSettings } from "../../../src/domain/device/patchDeviceSettings";
+import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
+import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
+import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
+import { FakePushSender } from "../../fakes/fakePushSender";
+import { FixedClock } from "../../fakes/fixedClock";
+import { expectAppError } from "../../support/expectAppError";
+import type { DeviceRecord } from "../../../src/ports/repositories";
+
+const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
+const DEVICE_ID = "3e0f2a9c-6b1d-4e8f-9a2b-7c5d4e3f2a1b";
+
+function buildDeps() {
+  const entitlementsRepo = new InMemoryEntitlementsRepo();
+  entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-19T08:00:00Z" });
+  return {
+    deviceRepo: new InMemoryDeviceRepo(),
+    entitlementsRepo,
+    usageRepo: new InMemoryUsageRepo(),
+    pushSender: new FakePushSender(),
+    clock: new FixedClock(new Date("2026-07-19T09:05:00Z")),
+  };
+}
+
+function seedDevice(
+  deps: ReturnType<typeof buildDeps>,
+  partitionKey: string,
+  overrides: Partial<DeviceRecord> = {},
+) {
+  const device: DeviceRecord = {
+    deviceId: DEVICE_ID,
+    ownerUserId: "u1",
+    platform: "android",
+    model: "Pixel",
+    appVersion: "1.0.0",
+    deviceName: "Pixel",
+    pushToken: "existing-token",
+    pushInvalid: false,
+    syncIntervalMinutes: 15,
+    trackingEnabled: true,
+    registeredAt: "2026-07-01T00:00:00Z",
+    lastSeenAt: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+  deps.deviceRepo.seed(partitionKey, device);
+  return device;
+}
+
+describe("domain/device/patchDeviceSettings", () => {
+  it("a parent may update any field of any family member's device", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u2" });
+
+    const result = await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30, trackingEnabled: false, deviceName: "Noor's tablet" },
+      },
+      deps,
+    );
+
+    expect(result.device).toMatchObject({
+      syncIntervalMinutes: 30,
+      trackingEnabled: false,
+      deviceName: "Noor's tablet",
+    });
+  });
+
+  it("sends a SETTINGS_CHANGED push carrying the full current state when syncIntervalMinutes/trackingEnabled actually change", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+
+    await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30, trackingEnabled: false },
+      },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(1);
+    expect(deps.pushSender.sent[0]).toMatchObject({
+      token: "device-token",
+      type: "SETTINGS_CHANGED",
+      data: { type: "SETTINGS_CHANGED", syncIntervalMinutes: "30", trackingEnabled: "false" },
+    });
+  });
+
+  it("sends no push when neither syncIntervalMinutes nor trackingEnabled actually changed", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15, trackingEnabled: true });
+
+    await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { deviceName: "New name" } },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(0);
+  });
+
+  it("sends no push when the new values equal the ones already stored (no real change)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 30, trackingEnabled: true });
+
+    await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30, trackingEnabled: true },
+      },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(0);
+  });
+
+  it("sends no push when the device has no pushToken", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: undefined, syncIntervalMinutes: 15 });
+
+    await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30 },
+      },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(0);
+  });
+
+  it("sends no push when the device's pushToken is already marked invalid", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", pushInvalid: true, syncIntervalMinutes: 15 });
+
+    await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30 },
+      },
+      deps,
+    );
+
+    expect(deps.pushSender.sent).toHaveLength(0);
+  });
+
+  it("marks the device pushInvalid on an invalidToken push outcome (§8.5 hygiene)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "device-token", syncIntervalMinutes: 15 });
+    deps.pushSender.setOutcome("invalidToken");
+
+    await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 30 },
+      },
+      deps,
+    );
+
+    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    expect(stored?.pushInvalid).toBe(true);
+  });
+
+  it("a non-parent owner may update only pushToken on their own device", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+
+    const result = await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "member",
+        deviceId: DEVICE_ID,
+        body: { pushToken: "fresh-token" },
+      },
+      deps,
+    );
+
+    expect(result.device.deviceId).toBe(DEVICE_ID);
+    const stored = await deps.deviceRepo.getDevice(FAMILY_ID, DEVICE_ID);
+    expect(stored?.pushToken).toBe("fresh-token");
+  });
+
+  it("throws AUTH_FORBIDDEN when a non-parent owner attempts a restricted field", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u1" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          role: "member",
+          deviceId: DEVICE_ID,
+          body: { syncIntervalMinutes: 30 },
+        },
+        deps,
+      ),
+      "AUTH_FORBIDDEN",
+    );
+  });
+
+  it("throws AUTH_FORBIDDEN when a non-parent, non-owner member targets someone else's device", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { ownerUserId: "u2" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        {
+          uid: "u1",
+          familyId: FAMILY_ID,
+          role: "member",
+          deviceId: DEVICE_ID,
+          body: { pushToken: "fresh-token" },
+        },
+        deps,
+      ),
+      "AUTH_FORBIDDEN",
+    );
+  });
+
+  it("a family-less owner may update any field of their own device (§4.3 family-less allowance)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, "u3", { ownerUserId: "u3" });
+
+    const result = await patchDeviceSettings(
+      {
+        uid: "u3",
+        familyId: null,
+        role: null,
+        deviceId: DEVICE_ID,
+        body: { syncIntervalMinutes: 60, trackingEnabled: false, deviceName: "Sam's phone" },
+      },
+      deps,
+    );
+
+    expect(result.device).toMatchObject({
+      syncIntervalMinutes: 60,
+      trackingEnabled: false,
+      deviceName: "Sam's phone",
+    });
+    expect(result.features.subscriptionStatus).toBe("free");
+  });
+
+  it("throws DEVICE_NOT_FOUND for an unknown deviceId", async () => {
+    const deps = buildDeps();
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+        deps,
+      ),
+      "DEVICE_NOT_FOUND",
+    );
+  });
+
+  it("throws DEVICE_NOT_FOUND when a family-less caller references a deviceId outside their own partition", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, "someone-else", { ownerUserId: "someone-else" });
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u3", familyId: null, role: null, deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+        deps,
+      ),
+      "DEVICE_NOT_FOUND",
+    );
+  });
+
+  it('throws VALIDATION_FAILED with details.fields: ["syncIntervalMinutes"] for a value outside the allowed set', async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, {});
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { syncIntervalMinutes: 20 } },
+        deps,
+      ),
+      "VALIDATION_FAILED",
+      { fields: ["syncIntervalMinutes"] },
+    );
+  });
+
+  it("throws VALIDATION_FAILED when the body has no fields at all", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, {});
+
+    await expectAppError(
+      patchDeviceSettings({ uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: {} }, deps),
+      "VALIDATION_FAILED",
+    );
+  });
+
+  it("accepts syncIntervalMinutes at the plan floor boundary (5, minSyncIntervalMinutes, §1.4/§9)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, {});
+
+    const result = await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { syncIntervalMinutes: 5 } },
+      deps,
+    );
+
+    expect(result.device.syncIntervalMinutes).toBe(5);
+  });
+
+  it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
+    const deviceRepo = new InMemoryDeviceRepo();
+    const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
+    const usageRepo = new InMemoryUsageRepo();
+    const pushSender = new FakePushSender();
+    const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
+    deviceRepo.seed(FAMILY_ID, {
+      deviceId: DEVICE_ID,
+      ownerUserId: "u1",
+      platform: "android",
+      model: "Pixel",
+      appVersion: "1.0.0",
+      deviceName: "Pixel",
+      pushInvalid: false,
+      syncIntervalMinutes: 15,
+      trackingEnabled: true,
+      registeredAt: "2026-07-01T00:00:00Z",
+      lastSeenAt: "2026-07-01T00:00:00Z",
+    });
+
+    await expectAppError(
+      patchDeviceSettings(
+        { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+        { deviceRepo, entitlementsRepo, usageRepo, pushSender, clock },
+      ),
+      "INTERNAL_ERROR",
+    );
+  });
+
+  it("records usage metric apiCalls under the familyId for a family member", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, {});
+
+    await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+      deps,
+    );
+
+    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
+    expect(count).toBe(1);
+  });
+
+  it("records usage metric apiCalls under the caller's own uid for a family-less caller", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, "u3", { ownerUserId: "u3" });
+
+    await patchDeviceSettings(
+      { uid: "u3", familyId: null, role: null, deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+      deps,
+    );
+
+    const count = await deps.usageRepo.get("u3", "apiCalls", "2026-07-19");
+    expect(count).toBe(1);
+  });
+
+  it("never leaks pushToken/locationPushToken in the response (write-only, §4.1)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { pushToken: "secret", locationPushToken: "secret-loc" });
+
+    const result = await patchDeviceSettings(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        role: "parent",
+        deviceId: DEVICE_ID,
+        body: { pushToken: "new-secret" },
+      },
+      deps,
+    );
+
+    expect(result.device).not.toHaveProperty("pushToken");
+    expect(result.device).not.toHaveProperty("locationPushToken");
+  });
+
+  it("preserves fields not present in the patch body", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, FAMILY_ID, { model: "Pixel 8", appVersion: "1.0.0", deviceName: "Eric's phone" });
+
+    const result = await patchDeviceSettings(
+      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
+      deps,
+    );
+
+    expect(result.device).toMatchObject({ model: "Pixel 8", appVersion: "1.0.0", deviceName: "Eric's phone" });
+  });
+});

@@ -50,6 +50,39 @@ export const registerDeviceRequestSchema = z.object({
 });
 export type RegisterDeviceRequest = z.infer<typeof registerDeviceRequestSchema>;
 
+// specs/001 §4.3 — the {deviceId} path param. deviceId is always a client-generated UUIDv4
+// (§1.4), so `.uuid()` alone already rejects every Table Storage RowKey-forbidden character
+// — no extra regex needed (contrast memberUserIdParamSchema, whose userId is free-form).
+export const deviceIdParamSchema = z.object({
+  deviceId: z.string().uuid(),
+});
+export type DeviceIdParam = z.infer<typeof deviceIdParamSchema>;
+
+// specs/001 §1.4 — syncIntervalMinutes' exact allowed set; anything else is VALIDATION_FAILED
+// here. The separate `>= features.limits.minSyncIntervalMinutes` plan-floor check (§9) needs
+// `features`, so it lives in the domain (patchDeviceSettings.ts), not this schema.
+const SYNC_INTERVAL_MINUTES_OPTIONS = new Set([5, 10, 15, 30, 60, 120, 1440]);
+
+// specs/001 §4.3 — update device settings: at least one field required.
+export const patchDeviceSettingsRequestSchema = z
+  .object({
+    syncIntervalMinutes: z
+      .number()
+      .refine((value) => SYNC_INTERVAL_MINUTES_OPTIONS.has(value))
+      .optional(),
+    trackingEnabled: z.boolean().optional(),
+    deviceName: z.string().min(1).max(40).optional(),
+    pushToken: z.string().min(1).optional(),
+  })
+  .refine(
+    (data) =>
+      data.syncIntervalMinutes !== undefined ||
+      data.trackingEnabled !== undefined ||
+      data.deviceName !== undefined ||
+      data.pushToken !== undefined,
+  );
+export type PatchDeviceSettingsRequest = z.infer<typeof patchDeviceSettingsRequestSchema>;
+
 // specs/001 §5.1 / §1.4 — one location fix. `fixes` array length (1-100) is enforced by
 // the domain (LOCATION_BATCH_TOO_LARGE / VALIDATION_FAILED are distinct codes, §10), not here.
 export const locationFixSchema = z.object({
