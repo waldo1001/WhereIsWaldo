@@ -2,10 +2,12 @@ package com.whereswaldo.android.ui.groups
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.whereswaldo.android.ui.designsystem.WaldoTheme
@@ -65,10 +69,20 @@ private sealed class PendingGroupAction {
  * the same [onLeft] fires with no `Toast` — that's a deliberate, already-confirmed user action
  * (via an [AlertDialog] confirm or the plain "Leave group" button), not a surprise the user needs
  * to be told about.
+ *
+ * **A6 addition** (specs/007-public-join-links.md §1/§4, specs/003-android-client.md §12.3): the
+ * share-sheet text now carries the canonical `https://{joinLinkHost}/g#{code}` link (007 §1: "the
+ * https form is the canonical one for sharing and QR") instead of the `waldo://` form — the
+ * `waldo://` scheme remains a fully supported deep link ([WaldoNavHost]), it's just no longer what
+ * this screen puts in the share text (007 §1 assigns that role to the landing page's own "open the
+ * app" affordance, W1 scope). A QR code of the same link renders below the share button, generated
+ * entirely on-device via [GroupQrCodeGenerator] — no networked QR-image service is ever involved
+ * (007 §4's hard requirement; see that object's doc for the full dependency justification).
  */
 @Composable
 fun GroupDetailRoute(
     viewModel: GroupDetailViewModel,
+    joinLinkHost: String,
     modifier: Modifier = Modifier,
     onLeft: () -> Unit = {},
     onOpenMap: (groupId: String) -> Unit = {},
@@ -90,6 +104,7 @@ fun GroupDetailRoute(
 
     GroupDetailScreen(
         state = state,
+        joinLinkHost = joinLinkHost,
         onRename = viewModel::rename,
         onExtend = viewModel::updateEndsAt,
         onRotateCode = viewModel::rotateCode,
@@ -106,6 +121,7 @@ fun GroupDetailRoute(
 @Composable
 fun GroupDetailScreen(
     state: GroupDetailUiState,
+    joinLinkHost: String,
     modifier: Modifier = Modifier,
     onRename: (String) -> Unit = {},
     onExtend: (String) -> Unit = {},
@@ -168,6 +184,9 @@ fun GroupDetailScreen(
                     WaldoCard {
                         Column(verticalArrangement = Arrangement.spacedBy(WaldoTheme.spacing.xs)) {
                             if (state.code != null) {
+                                val joinLink = remember(joinLinkHost, state.code) {
+                                    GroupJoinLinkBuilder.buildHttpsLink(joinLinkHost, state.code)
+                                }
                                 WaldoStatusChip(label = "Code: ${state.code}", tone = WaldoStatusTone.Success)
                                 WaldoButton(
                                     text = "Share code",
@@ -178,11 +197,26 @@ fun GroupDetailScreen(
                                             putExtra(
                                                 Intent.EXTRA_TEXT,
                                                 "Join my \"${state.name}\" group on Where's waldo — " +
-                                                    "code ${state.code}\nwaldo://group-join?code=${state.code}",
+                                                    "code ${state.code}\n$joinLink",
                                             )
                                         }
                                         context.startActivity(Intent.createChooser(shareIntent, "Share group code"))
                                     },
+                                )
+                                // A6 (specs/007 §4): on-device QR of the exact share link above —
+                                // no networked QR-image service (GroupQrCodeGenerator's doc has the
+                                // full justification). Sized to fill the card's width rather than a
+                                // hardcoded dp constant (specs/003 §4.1's token vocabulary has no
+                                // token for "QR code edge length"; aspectRatio(1f) keeps it square
+                                // at whatever width the layout gives it).
+                                Image(
+                                    bitmap = remember(joinLink) { GroupQrCodeGenerator.toBitmap(joinLink).asImageBitmap() },
+                                    contentDescription = "QR code to join \"${state.name}\" — $joinLink",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(1f)
+                                        .padding(top = WaldoTheme.spacing.sm),
+                                    filterQuality = FilterQuality.None,
                                 )
                             } else {
                                 WaldoStatusChip(label = "Code no longer available", tone = WaldoStatusTone.Neutral)
@@ -347,6 +381,7 @@ private fun GroupDetailScreenLightPreview() {
                     GroupMemberUi("u9", "Noor", "member", "2026-07-21T10:05:00Z"),
                 ),
             ),
+            joinLinkHost = "CHANGE-ME.azurestaticapps.net",
         )
     }
 }
@@ -368,6 +403,7 @@ private fun GroupDetailScreenDarkPreview() {
                 createdAt = "2026-07-21T10:00:00Z",
                 members = null,
             ),
+            joinLinkHost = "CHANGE-ME.azurestaticapps.net",
         )
     }
 }

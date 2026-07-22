@@ -42,6 +42,7 @@ class AppContainer(context: Context) {
         authModeValue = BuildConfig.AUTH_MODE,
         firebaseProjectId = BuildConfig.FIREBASE_PROJECT_ID,
         mapsApiKey = BuildConfig.MAPS_API_KEY,
+        joinLinkHost = BuildConfig.JOIN_LINK_HOST,
     )
 
     /** Registered/cleared by `MainActivity` (specs/003 §7) — Firebase phone-auth needs a live

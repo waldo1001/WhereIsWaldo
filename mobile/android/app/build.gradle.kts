@@ -46,6 +46,15 @@ val hasReleaseSigningMaterial: Boolean =
     listOf(releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword)
         .all { !it.isNullOrBlank() }
 
+// A6 (specs/007-public-join-links.md §1, specs/003-android-client.md §12.3): the public join-link
+// host is a deployment constant recorded at provisioning time (H4, docs/azure-setup.md §7) — not
+// yet provisioned, so this is an obviously-fake placeholder, mirroring BASE_URL/FIREBASE_PROJECT_ID's
+// TODO(H1) convention above. Read into BOTH BuildConfig.JOIN_LINK_HOST (Kotlin code, AppConfig) and
+// the manifest's ${joinLinkHost} placeholder (AndroidManifest.xml's https intent-filter) from this
+// single value so the two can never drift apart. Debug and release intentionally share one value
+// (unlike BASE_URL/AUTH_MODE) — the join-link surface has no dev mode (specs/003 §12.3).
+val joinLinkHost: String = "CHANGE-ME.azurestaticapps.net" // TODO(H4): real SWA hostname once provisioned.
+
 android {
     namespace = "com.whereswaldo.android"
     compileSdk = 36
@@ -85,6 +94,8 @@ android {
             buildConfigField("String", "AUTH_MODE", "\"insecure-local\"")
             buildConfigField("String", "FIREBASE_PROJECT_ID", "\"waldo-dev-placeholder\"")
             buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
+            buildConfigField("String", "JOIN_LINK_HOST", "\"$joinLinkHost\"")
+            manifestPlaceholders["joinLinkHost"] = joinLinkHost
         }
         release {
             // A7: real release signing when CI/local supplies all four values above; otherwise
@@ -104,6 +115,8 @@ android {
             buildConfigField("String", "AUTH_MODE", "\"firebase\"")
             buildConfigField("String", "FIREBASE_PROJECT_ID", "\"CHANGE-ME\"")
             buildConfigField("String", "MAPS_API_KEY", "\"$mapsApiKey\"")
+            buildConfigField("String", "JOIN_LINK_HOST", "\"$joinLinkHost\"")
+            manifestPlaceholders["joinLinkHost"] = joinLinkHost
         }
     }
 
@@ -168,6 +181,14 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+
+    // A6 (specs/007-public-join-links.md §4/§7, specs/003-android-client.md §12.3): on-device QR
+    // generation for the public join link. `core` is ZXing's plain-Java barcode encoder/decoder —
+    // no network access, no Android-framework dependency of its own, so nothing here can leak the
+    // join code to a third party (a networked QR-image service would be a spec violation); the
+    // only new dependency this task adds (see ui/groups/GroupQrCodeGenerator.kt's doc for the full
+    // justification, reviewed per docs/security-review-checklist.md §4).
+    implementation("com.google.zxing:core:3.5.3")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

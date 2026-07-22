@@ -16,12 +16,19 @@ import com.whereswaldo.android.auth.AuthMode
  *   real map-tile SDK is configured" — [com.whereswaldo.android.ui.map.PlaceholderMapRenderer] is
  *   used regardless of this value in A2; a future real [com.whereswaldo.android.ui.map.MapRenderer]
  *   would read this to decide whether it can initialize.
+ * @property joinLinkHost the public join-link deployment constant (specs/007-public-join-links.md
+ *   §1, specs/003-android-client.md §12.3, A6) — `https://{joinLinkHost}/g#{CODE}`. Recorded at
+ *   provisioning time (H4); an obviously-fake placeholder (`CHANGE-ME.azurestaticapps.net`) ships
+ *   in both build types until then, mirroring `BASE_URL`/`FIREBASE_PROJECT_ID`'s `TODO(H1)`
+ *   convention above. Unlike those, debug and release intentionally share one value: the join-link
+ *   surface has no dev mode (specs/003 §12.3).
  */
 data class AppConfig(
     val baseUrl: String,
     val authMode: AuthMode,
     val firebaseProjectId: String,
     val mapsApiKey: String = "",
+    val joinLinkHost: String = "",
 ) {
     companion object {
         fun fromBuildConfig(
@@ -29,11 +36,13 @@ data class AppConfig(
             authModeValue: String,
             firebaseProjectId: String,
             mapsApiKey: String = "",
+            joinLinkHost: String = "",
         ): AppConfig = AppConfig(
             baseUrl = baseUrl,
             authMode = AuthMode.fromBuildConfigValue(authModeValue),
             firebaseProjectId = firebaseProjectId,
             mapsApiKey = mapsApiKey,
+            joinLinkHost = joinLinkHost,
         )
     }
 }
