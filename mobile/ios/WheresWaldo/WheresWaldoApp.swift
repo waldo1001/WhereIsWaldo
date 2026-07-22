@@ -6,16 +6,25 @@ import WaldoKit
 /// nothing else.
 @main
 struct WheresWaldoApp: App {
-    @StateObject private var coordinator = AppCoordinator()
+    // specs/004-ios-client.md §8 — the one shared `AppConfig`, so `AppCoordinator` (deep-link host
+    // matching) and `RootView` (share link/QR) agree on the same `joinLinkHost` (specs/007 §1).
+    private let config: AppConfig
+    @StateObject private var coordinator: AppCoordinator
+
+    init() {
+        let config = AppConfig()
+        self.config = config
+        _coordinator = StateObject(wrappedValue: AppCoordinator(joinLinkHost: config.joinLinkHost))
+    }
 
     var body: some Scene {
         WindowGroup {
-            RootView(coordinator: coordinator)
-                // specs/004-ios-client.md §3.4 — the group-join deep link
-                // (waldo://group-join?code=…) is parsed/validated in WaldoKit
-                // (AppCoordinator.handleDeepLink, backed by the pure GroupCodeParsing); this is
-                // just the OS-lifecycle forwarding, the one piece of "logic" the app target is
-                // allowed (specs/004 §1.1).
+            RootView(coordinator: coordinator, config: config)
+                // specs/004-ios-client.md §3.4/§3.5 — both the `waldo://group-join?code=…` deep
+                // link and, since specs/007, the `https://{joinLinkHost}/g#CODE` universal link are
+                // parsed/validated in WaldoKit (AppCoordinator.handleDeepLink, backed by the pure
+                // GroupCodeParsing); this is just the OS-lifecycle forwarding, the one piece of
+                // "logic" the app target is allowed (specs/004 §1.1).
                 .onOpenURL { url in coordinator.handleDeepLink(url) }
         }
     }
