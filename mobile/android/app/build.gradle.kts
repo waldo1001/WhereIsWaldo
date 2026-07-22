@@ -47,13 +47,13 @@ val hasReleaseSigningMaterial: Boolean =
         .all { !it.isNullOrBlank() }
 
 // A6 (specs/007-public-join-links.md §1, specs/003-android-client.md §12.3): the public join-link
-// host is a deployment constant recorded at provisioning time (H4, docs/azure-setup.md §7) — not
-// yet provisioned, so this is an obviously-fake placeholder, mirroring BASE_URL/FIREBASE_PROJECT_ID's
-// TODO(H1) convention above. Read into BOTH BuildConfig.JOIN_LINK_HOST (Kotlin code, AppConfig) and
-// the manifest's ${joinLinkHost} placeholder (AndroidManifest.xml's https intent-filter) from this
-// single value so the two can never drift apart. Debug and release intentionally share one value
-// (unlike BASE_URL/AUTH_MODE) — the join-link surface has no dev mode (specs/003 §12.3).
-val joinLinkHost: String = "CHANGE-ME.azurestaticapps.net" // TODO(H4): real SWA hostname once provisioned.
+// host is a deployment constant recorded at provisioning time (H4, docs/azure-setup.md §7) — the
+// join-link SWA (`swa-whereiswaldo`, resource group WhereIsWaldo) was provisioned 2026-07-22; this
+// is its real default hostname. Read into BOTH BuildConfig.JOIN_LINK_HOST (Kotlin code, AppConfig)
+// and the manifest's ${joinLinkHost} placeholder (AndroidManifest.xml's https intent-filter) from
+// this single value so the two can never drift apart. Debug and release intentionally share one
+// value (unlike BASE_URL/AUTH_MODE) — the join-link surface has no dev mode (specs/003 §12.3).
+val joinLinkHost: String = "gentle-hill-0fae42f03.7.azurestaticapps.net"
 
 android {
     namespace = "com.whereswaldo.android"

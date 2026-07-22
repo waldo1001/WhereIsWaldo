@@ -18,10 +18,9 @@ import com.whereswaldo.android.auth.AuthMode
  *   would read this to decide whether it can initialize.
  * @property joinLinkHost the public join-link deployment constant (specs/007-public-join-links.md
  *   §1, specs/003-android-client.md §12.3, A6) — `https://{joinLinkHost}/g#{CODE}`. Recorded at
- *   provisioning time (H4); an obviously-fake placeholder (`CHANGE-ME.azurestaticapps.net`) ships
- *   in both build types until then, mirroring `BASE_URL`/`FIREBASE_PROJECT_ID`'s `TODO(H1)`
- *   convention above. Unlike those, debug and release intentionally share one value: the join-link
- *   surface has no dev mode (specs/003 §12.3).
+ *   provisioning time (H4, done 2026-07-22 — see `app/build.gradle.kts`'s `joinLinkHost` val for
+ *   the real value). Unlike `BASE_URL`/`FIREBASE_PROJECT_ID`, debug and release intentionally
+ *   share one value: the join-link surface has no dev mode (specs/003 §12.3).
  */
 data class AppConfig(
     val baseUrl: String,

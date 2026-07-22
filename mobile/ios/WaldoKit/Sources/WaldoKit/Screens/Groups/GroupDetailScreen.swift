@@ -28,7 +28,7 @@ public struct GroupDetailScreen: View {
 
     public init(
         viewModel: GroupDetailViewModel,
-        joinLinkHost: String = AppConfig.placeholderJoinLinkHost,
+        joinLinkHost: String = AppConfig.defaultJoinLinkHost,
         onSelectMap: @escaping () -> Void,
         onExit: @escaping () -> Void
     ) {

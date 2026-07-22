@@ -22,11 +22,12 @@
 	  <array>
 	    <string>applinks:CHANGE-ME.azurestaticapps.net</string>
 	  </array>
-	  "CHANGE-ME.azurestaticapps.net" is the same obviously-placeholder host as
-	  AppConfig.placeholderJoinLinkHost (WaldoKit) — H4 records the real JOIN_LINK_HOST
-	  (docs/azure-setup.md §7); H6 swaps this placeholder for that real value AND uncomments the
-	  block once Apple Developer Program enrollment completes. Adding it before enrollment breaks
-	  code signing, exactly like the Location Push entitlement above.
+	  "CHANGE-ME.azurestaticapps.net" is a placeholder standing in for the real value H4 already
+	  recorded elsewhere (docs/azure-setup.md §7; AppConfig.defaultJoinLinkHost in WaldoKit is
+	  "gentle-hill-0fae42f03.7.azurestaticapps.net") — deliberately NOT swapped in here yet, since
+	  this entitlement itself stays inert until H6. H6 swaps this placeholder for the real value AND
+	  uncomments the block once Apple Developer Program enrollment completes. Adding it before
+	  enrollment breaks code signing, exactly like the Location Push entitlement above.
 	-->
 </dict>
 </plist>

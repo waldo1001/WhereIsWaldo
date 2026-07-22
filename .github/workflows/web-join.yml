@@ -11,6 +11,7 @@ on:
     paths: ["web/join/**", ".github/workflows/web-join.yml"]
   pull_request:
     paths: ["web/join/**", ".github/workflows/web-join.yml"]
+  workflow_dispatch: {} # manual re-deploy without a content change (e.g. after H4/H7 land)
 
 permissions:
   contents: read

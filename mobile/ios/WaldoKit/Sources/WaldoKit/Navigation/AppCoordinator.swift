@@ -10,7 +10,7 @@ public final class AppCoordinator: ObservableObject {
     /// `handleDeepLink` matches https universal links against (`AppConfig.joinLinkHost`).
     private let joinLinkHost: String
 
-    public init(route: AppRoute = .signIn, joinLinkHost: String = AppConfig.placeholderJoinLinkHost) {
+    public init(route: AppRoute = .signIn, joinLinkHost: String = AppConfig.defaultJoinLinkHost) {
         self.route = route
         self.joinLinkHost = joinLinkHost
     }

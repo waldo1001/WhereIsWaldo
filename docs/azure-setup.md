@@ -123,6 +123,8 @@ GitHub → Settings → Branches → protect `main`: require the status checks *
 
 One Azure Static Web App (Free tier) hosts the public join-link landing page, the `.well-known` App/Universal Links files (deployed by W1's workflow), and later the legal pages (H7). No secrets: deploys authenticate via the existing OIDC app registration.
 
+*(Done 2026-07-22: `swa-whereiswaldo` in resource group `WhereIsWaldo`, subscription "Visual Studio Enterprise Subscription". **`JOIN_LINK_HOST` = `gentle-hill-0fae42f03.7.azurestaticapps.net`** — recorded in `mobile/android/app/build.gradle.kts`'s `joinLinkHost` val and `mobile/ios/WaldoKit/.../AppConfig.swift`'s `defaultJoinLinkHost`. RBAC granted to `gh-whereiswaldo-deploy` (`722f3f16-…`) — Contributor on the SWA resource. Repo variables `AZURE_STATICWEBAPP_NAME`/`AZURE_STATICWEBAPP_RESOURCE_GROUP` (step 2b) both set.)*
+
 ```bash
 az staticwebapp create -n swa-whereiswaldo -g WhereIsWaldo -l westeurope --sku Free
 az staticwebapp show   -n swa-whereiswaldo -g WhereIsWaldo --query defaultHostname -o tsv
@@ -134,5 +136,8 @@ az staticwebapp show   -n swa-whereiswaldo -g WhereIsWaldo --query defaultHostna
    az role assignment create --assignee $AZURE_CLIENT_ID --role Contributor \
      --scope $(az staticwebapp show -n swa-whereiswaldo -g WhereIsWaldo --query id -o tsv)
    ```
+   2b. **The W1 workflow (`.github/workflows/web-join.yml`) also needs two GitHub repo variables** (Settings → Secrets and variables → Actions → Variables) before its `deploy` job will run — it's a no-op until both exist:
+   - `AZURE_STATICWEBAPP_NAME` = `swa-whereiswaldo`
+   - `AZURE_STATICWEBAPP_RESOURCE_GROUP` = `WhereIsWaldo`
 3. After W1 merges and deploys: verify `https://$JOIN_LINK_HOST/g` renders the landing page, and both `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` return JSON with `Content-Type: application/json` and **no redirect** (007 §3).
 4. Custom domain (optional, later — after the O10 naming decision): `az staticwebapp hostname set` + DNS; free managed cert. Old printed QR codes on the default hostname keep working (007 §1).

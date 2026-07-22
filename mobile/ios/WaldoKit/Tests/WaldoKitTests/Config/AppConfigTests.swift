@@ -20,12 +20,12 @@ struct AppConfigTests {
     }
 
     // specs/004-ios-client.md §3.5/§8, specs/007-public-join-links.md §1 — `joinLinkHost` is the
-    // 007 deployment constant (recorded at H4). Like `baseURL`'s `.invalid`-TLD placeholder, the
-    // default here is obviously a placeholder (never a real, resolvable host) so H1/H4 provisioning
-    // is a config change, never an edit to this default.
-    @Test func joinLinkHostHasAnObviouslyPlaceholderDefault() {
-        #expect(AppConfig().joinLinkHost == AppConfig.placeholderJoinLinkHost)
-        #expect(AppConfig.placeholderJoinLinkHost.contains("CHANGE-ME"))
+    // 007 deployment constant. H4 (docs/azure-setup.md §7) provisioned the real Static Web App
+    // 2026-07-22; `defaultJoinLinkHost` is its real hostname (no Xcode build-config override
+    // mechanism exists yet, specs/004 §1.1, so this default is what actually ships).
+    @Test func joinLinkHostDefaultsToTheProvisionedHost() {
+        #expect(AppConfig().joinLinkHost == AppConfig.defaultJoinLinkHost)
+        #expect(AppConfig.defaultJoinLinkHost == "gentle-hill-0fae42f03.7.azurestaticapps.net")
     }
 
     @Test func joinLinkHostIsConfigurable() {
