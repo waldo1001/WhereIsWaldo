@@ -6,7 +6,6 @@ import { InMemoryGroupCodeRepo } from "../../fakes/inMemoryGroupCodeRepo";
 import { InMemoryGroupExpiryRepo } from "../../fakes/inMemoryGroupExpiryRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { SeqIdGenerator } from "../../fakes/seqIdGenerator";
 import { SeqInviteCodeGenerator } from "../../fakes/seqInviteCodeGenerator";
 import { FixedClock } from "../../fakes/fixedClock";
@@ -22,7 +21,6 @@ function buildDeps() {
     groupExpiryRepo: new InMemoryGroupExpiryRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     idGenerator: new SeqIdGenerator(),
     inviteCodeGenerator: new SeqInviteCodeGenerator(),
     clock: new FixedClock(NOW),
@@ -375,25 +373,5 @@ describe("domain/group/createGroup", () => {
 
       expect(result.state).toBe("active");
     });
-  });
-
-  it("records usage metric apiCalls under the caller's familyId when they have one", async () => {
-    const deps = buildDeps();
-    deps.userRepo.seed("u1", { familyId: "fam_existing0000000000", role: "parent", displayName: "Eric" });
-    deps.entitlementsRepo.seed("fam_existing0000000000", { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
-
-    await createGroup({ uid: "u1", body: { name: "Crew", endsAt: VALID_ENDS_AT, expiryPolicy: "delete" } }, deps);
-
-    const count = await deps.usageRepo.get("fam_existing0000000000", "apiCalls", "2026-07-21");
-    expect(count).toBe(1);
-  });
-
-  it("records usage metric apiCalls under the caller's uid when family-less", async () => {
-    const deps = buildDeps();
-
-    await createGroup({ uid: "u1", body: VALID_BODY }, deps);
-
-    const count = await deps.usageRepo.get("u1", "apiCalls", "2026-07-21");
-    expect(count).toBe(1);
   });
 });

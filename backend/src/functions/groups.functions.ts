@@ -70,13 +70,13 @@ app.http("createGroup", {
     try {
       const auth = await authenticate(
         request.headers.get("authorization"),
-        { tokenVerifier, userRepo },
+        { tokenVerifier, userRepo, usageRepo, clock },
         { allowNoProfile: true },
       );
       const body: unknown = await request.json().catch(() => ({}));
       const result = await createGroup(
         { uid: auth.uid, body },
-        { groupRepo, groupCodeRepo, groupExpiryRepo, userRepo, entitlementsRepo, usageRepo, idGenerator, inviteCodeGenerator, clock },
+        { groupRepo, groupCodeRepo, groupExpiryRepo, userRepo, entitlementsRepo, idGenerator, inviteCodeGenerator, clock },
       );
       const { features, ...data } = result;
       return { status: 201, jsonBody: ok(data, features) };
@@ -93,10 +93,10 @@ app.http("listGroups", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await listGroups(
         { uid: auth.uid, familyId: auth.familyId },
-        { groupRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, userRepo, entitlementsRepo, clock },
       );
       return { status: 200, jsonBody: ok({ groups: result.groups }, result.features) };
     } catch (err) {
@@ -112,11 +112,11 @@ app.http("getGroupDetail", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       const result = await getGroupDetail(
         { uid: auth.uid, familyId: auth.familyId, groupId },
-        { groupRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, entitlementsRepo, clock },
       );
       const { features, ...data } = result;
       return { status: 200, jsonBody: ok(data, features) };
@@ -135,13 +135,13 @@ app.http("joinGroup", {
     try {
       const auth = await authenticate(
         request.headers.get("authorization"),
-        { tokenVerifier, userRepo },
+        { tokenVerifier, userRepo, usageRepo, clock },
         { allowNoProfile: true },
       );
       const body: unknown = await request.json().catch(() => ({}));
       const result = await joinGroup(
         { uid: auth.uid, body },
-        { groupRepo, groupCodeRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, groupCodeRepo, userRepo, entitlementsRepo, clock },
       );
       const { features, ...data } = result;
       return { status: 200, jsonBody: ok(data, features) };
@@ -158,12 +158,12 @@ app.http("patchGroup", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await patchGroup(
         { uid: auth.uid, familyId: auth.familyId, groupId, body },
-        { groupRepo, groupExpiryRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, groupExpiryRepo, entitlementsRepo, clock },
       );
       const { features, ...data } = result;
       return { status: 200, jsonBody: ok(data, features) };
@@ -180,11 +180,11 @@ app.http("deleteGroup", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       await deleteGroup(
         { uid: auth.uid, familyId: auth.familyId, groupId },
-        { groupRepo, groupCodeRepo, groupExpiryRepo, groupLastKnownRepo, userRepo, usageRepo, clock },
+        { groupRepo, groupCodeRepo, groupExpiryRepo, groupLastKnownRepo, userRepo },
       );
       return { status: 204 };
     } catch (err) {
@@ -200,11 +200,11 @@ app.http("rotateGroupCode", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       const result = await rotateGroupCode(
         { uid: auth.uid, familyId: auth.familyId, groupId },
-        { groupRepo, groupCodeRepo, entitlementsRepo, usageRepo, inviteCodeGenerator, clock },
+        { groupRepo, groupCodeRepo, entitlementsRepo, inviteCodeGenerator, clock },
       );
       const { features, ...data } = result;
       return { status: 200, jsonBody: ok(data, features) };
@@ -221,11 +221,11 @@ app.http("leaveGroup", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       await leaveGroup(
         { uid: auth.uid, familyId: auth.familyId, groupId },
-        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, clock },
       );
       return { status: 204 };
     } catch (err) {
@@ -241,12 +241,12 @@ app.http("kickMember", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
       await kickMember(
         { uid: auth.uid, familyId: auth.familyId, groupId, targetUserId },
-        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, groupLastKnownRepo, userRepo, entitlementsRepo, clock },
       );
       return { status: 204 };
     } catch (err) {
@@ -262,11 +262,11 @@ app.http("getGroupLatestLocations", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { groupId } = parseOrThrow(groupIdParamSchema, { groupId: request.params.groupId });
       const result = await getGroupLatestLocations(
         { uid: auth.uid, familyId: auth.familyId, groupId },
-        { groupRepo, groupLastKnownRepo, entitlementsRepo, usageRepo, clock },
+        { groupRepo, groupLastKnownRepo, entitlementsRepo, clock },
       );
       return { status: 200, jsonBody: ok({ members: result.members }, result.features) };
     } catch (err) {

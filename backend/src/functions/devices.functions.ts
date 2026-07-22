@@ -49,7 +49,7 @@ app.http("registerDevice", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await registerDevice(
         { uid: auth.uid, familyId: auth.familyId, body },
@@ -72,10 +72,10 @@ app.http("listMyDevices", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await listMyDevices(
         { uid: auth.uid, familyId: auth.familyId },
-        { deviceRepo, familyRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { deviceRepo, familyRepo, userRepo, entitlementsRepo },
       );
       return { status: 200, jsonBody: ok({ devices: result.devices }, result.features) };
     } catch (err) {
@@ -91,12 +91,12 @@ app.http("patchDeviceSettings", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { deviceId } = parseOrThrow(deviceIdParamSchema, { deviceId: request.params.deviceId });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await patchDeviceSettings(
         { uid: auth.uid, familyId: auth.familyId, role: auth.role, deviceId, body },
-        { deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, pushSender },
       );
       return { status: 200, jsonBody: ok(result.device, result.features) };
     } catch (err) {

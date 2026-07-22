@@ -5,7 +5,6 @@ import { InMemoryInviteRepo } from "../../fakes/inMemoryInviteRepo";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { InviteRecord } from "../../../src/ports/repositories";
@@ -21,7 +20,6 @@ function buildDeps() {
     familyRepo,
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo,
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
   };
 }
@@ -94,17 +92,6 @@ describe("domain/family/acceptInvite", () => {
     );
 
     expect(result.role).toBe("member");
-  });
-
-  it("records usage metric apiCalls on the joined family", async () => {
-    const deps = buildDeps();
-    await seedFamily(deps);
-    await deps.inviteRepo.createInvite(baseInvite());
-
-    await acceptInvite({ uid: "u2", familyId: null, body: { inviteCode: INVITE_CODE, displayName: "Noor" } }, deps);
-
-    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
   });
 
   it("throws FAMILY_ALREADY_MEMBER when the caller already belongs to a family", async () => {
@@ -236,7 +223,6 @@ describe("domain/family/acceptInvite", () => {
       familyRepo,
       userRepo: new InMemoryUserRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
-      usageRepo: new InMemoryUsageRepo(),
       clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
     };
 

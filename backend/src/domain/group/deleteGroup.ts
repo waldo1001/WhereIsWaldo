@@ -8,13 +8,11 @@
 // unlike the reverse-index rows below.
 
 import { AppError } from "../../http/errors";
-import type { Clock } from "../../ports/support";
 import type {
   GroupCodeRepo,
   GroupExpiryRepo,
   GroupLastKnownRepo,
   GroupRepo,
-  UsageRepo,
   UserRepo,
 } from "../../ports/repositories";
 import { hardDeleteGroupFootprint } from "./groupDeletion";
@@ -25,8 +23,6 @@ export interface DeleteGroupDeps {
   groupExpiryRepo: GroupExpiryRepo;
   groupLastKnownRepo: GroupLastKnownRepo;
   userRepo: UserRepo;
-  usageRepo: UsageRepo;
-  clock: Clock;
 }
 
 export interface DeleteGroupInput {
@@ -34,10 +30,6 @@ export interface DeleteGroupInput {
   /** The caller's familyId from the resolved auth context (§1.5), null if family-less. */
   familyId: string | null;
   groupId: string;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 function bucketDateOf(isoTimestamp: string): string {
@@ -64,7 +56,4 @@ export async function deleteGroup(input: DeleteGroupInput, deps: DeleteGroupDeps
   // expiry row LAST (own concern here since only this caller knows which bucket to target).
   await hardDeleteGroupFootprint(meta, deps);
   await deps.groupExpiryRepo.deleteExpiryRow(bucketDateOf(meta.endsAt), input.groupId);
-
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 }

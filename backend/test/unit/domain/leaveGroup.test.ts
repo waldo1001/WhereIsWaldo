@@ -4,7 +4,6 @@ import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryGroupLastKnownRepo } from "../../fakes/inMemoryGroupLastKnownRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
@@ -17,7 +16,6 @@ function buildDeps() {
     groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
   };
 }
@@ -161,15 +159,6 @@ describe("domain/group/leaveGroup", () => {
       leaveGroup({ uid: "u9", familyId: null, groupId: "grp_a" }, deps),
       "GROUP_EXPIRED",
     );
-  });
-
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await leaveGroup({ uid: "u9", familyId: null, groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("u9", "apiCalls", "2026-07-21")).toBe(1);
   });
 
   it("throws GROUP_NOT_FOUND when meta is gone but an orphaned member row survives (crash mid-sweep)", async () => {

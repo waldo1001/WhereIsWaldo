@@ -3,7 +3,7 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 import { toGroupListItem, type GroupListItem } from "./groupView";
@@ -12,7 +12,6 @@ export interface ListGroupsDeps {
   groupRepo: GroupRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -25,10 +24,6 @@ export interface ListGroupsInput {
 export interface ListGroupsResult {
   groups: GroupListItem[];
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function listGroups(input: ListGroupsInput, deps: ListGroupsDeps): Promise<ListGroupsResult> {
@@ -57,8 +52,6 @@ export async function listGroups(input: ListGroupsInput, deps: ListGroupsDeps): 
     const memberCount = (await deps.groupRepo.listMembers(meta.groupId)).length;
     groups.push(toGroupListItem(meta, membership.role, memberCount, state));
   }
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return { groups, features };
 }

@@ -10,7 +10,6 @@ import type {
   FamilyRepo,
   InviteRepo,
   Role,
-  UsageRepo,
   UserRepo,
 } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
@@ -21,7 +20,6 @@ export interface AcceptInviteDeps {
   familyRepo: FamilyRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -37,10 +35,6 @@ export interface AcceptInviteResult {
   familyName: string;
   role: Role;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function acceptInvite(input: AcceptInviteInput, deps: AcceptInviteDeps): Promise<AcceptInviteResult> {
@@ -82,7 +76,6 @@ export async function acceptInvite(input: AcceptInviteInput, deps: AcceptInviteD
   const member: FamilyMember = { userId: input.uid, role: invite.role, displayName, joinedAt: usedAt };
   await deps.familyRepo.addMember(invite.familyId, member);
   await deps.userRepo.createProfile(input.uid, { familyId: invite.familyId, role: invite.role, displayName });
-  await deps.usageRepo.increment(invite.familyId, "apiCalls", usageDate(now));
 
   return { familyId: invite.familyId, familyName: familyMeta.familyName, role: invite.role, features };
 }

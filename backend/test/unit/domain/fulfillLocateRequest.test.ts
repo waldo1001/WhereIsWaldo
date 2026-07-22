@@ -330,14 +330,13 @@ describe("domain/locate/fulfillLocateRequest", () => {
     expect(requestRecord?.status).toBe("fulfilled"); // must NOT be clobbered to "expired"
   });
 
-  it("increments fixes and apiCalls usage on an accepted fulfill", async () => {
+  it("increments fixes usage on an accepted fulfill", async () => {
     const deps = buildDeps();
     deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
 
     await fulfillLocateRequest(baseInput(), deps);
 
     expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(1);
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 
   it("is idempotent on fixId: a replay does not double-write last-known/history/fixes usage", async () => {
@@ -350,8 +349,6 @@ describe("domain/locate/fulfillLocateRequest", () => {
     expect(result.status).toBe("fulfilled");
     expect(deps.historyStore.fixes.length).toBe(1);
     expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(1);
-    // apiCalls still counts every authenticated call, including replays.
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(2);
   });
 
   it("past expiresAt: throws LOCATE_REQUEST_EXPIRED but still stores last-known + history", async () => {

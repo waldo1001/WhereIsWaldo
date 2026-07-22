@@ -57,7 +57,7 @@ app.http("reportLocations", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await reportLocations(
         {
@@ -106,10 +106,10 @@ app.http("latestLocations", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await latestLocations(
         { familyId: auth.familyId },
-        { familyRepo, deviceRepo, lastKnownRepo, usageRepo, entitlementsRepo, clock },
+        { familyRepo, deviceRepo, lastKnownRepo, entitlementsRepo, clock },
       );
       return {
         status: 200,

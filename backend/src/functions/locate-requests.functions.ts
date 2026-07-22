@@ -59,7 +59,7 @@ app.http("createLocateRequest", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await createLocateRequest(
         { uid: auth.uid, familyId: auth.familyId, body },
@@ -102,10 +102,10 @@ app.http("pollLocateRequest", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await pollLocateRequest(
         { uid: auth.uid, familyId: auth.familyId, requestId: request.params.requestId ?? "" },
-        { locateRequestRepo, usageRepo, entitlementsRepo, clock },
+        { locateRequestRepo, entitlementsRepo, clock },
       );
       return {
         status: 200,
@@ -127,7 +127,7 @@ app.http("fulfillLocateRequest", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await fulfillLocateRequest(
         {

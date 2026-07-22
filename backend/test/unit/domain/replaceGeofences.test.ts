@@ -5,14 +5,11 @@ import { InMemoryGeofenceConfigRepo } from "../../fakes/inMemoryGeofenceConfigRe
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FakePushSender } from "../../fakes/fakePushSender";
-import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { DeviceRecord } from "../../../src/ports/repositories";
 
 const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
-const NOW = "2026-07-19T09:10:00Z";
 
 function buildDeps() {
   const entitlementsRepo = new InMemoryEntitlementsRepo();
@@ -22,9 +19,7 @@ function buildDeps() {
     deviceRepo: new InMemoryDeviceRepo(),
     familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo,
-    usageRepo: new InMemoryUsageRepo(),
     pushSender: new FakePushSender(),
-    clock: new FixedClock(new Date(NOW)),
   };
 }
 
@@ -117,9 +112,7 @@ describe("domain/geofence/replaceGeofences", () => {
       deviceRepo: new InMemoryDeviceRepo(),
       familyRepo: new InMemoryFamilyRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
-      usageRepo: new InMemoryUsageRepo(),
       pushSender: new FakePushSender(),
-      clock: new FixedClock(new Date(NOW)),
     };
     await expectAppError(replaceGeofences(baseInput(), deps), "INTERNAL_ERROR");
   });
@@ -300,12 +293,6 @@ describe("domain/geofence/replaceGeofences", () => {
     const result = await replaceGeofences(baseInput({ body: { geofences: [] } }), deps);
     expect(result.geofences).toEqual([]);
     expect(result.version).toBe(1);
-  });
-
-  it("increments apiCalls once on success", async () => {
-    const deps = buildDeps();
-    await replaceGeofences(baseInput(), deps);
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 
   it("sends GEOFENCE_CONFIG_CHANGED to ALL family devices (not excluding anyone) with the new etag, fanning out per-member (002 §2.4)", async () => {

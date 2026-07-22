@@ -7,7 +7,7 @@
 import { AppError } from "../../http/errors";
 import { parseOrThrow, patchGroupRequestSchema } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupExpiryRepo, GroupMeta, GroupRepo, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupExpiryRepo, GroupMeta, GroupRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 import { toGroupListItem, type GroupListItem } from "./groupView";
@@ -16,7 +16,6 @@ export interface PatchGroupDeps {
   groupRepo: GroupRepo;
   groupExpiryRepo: GroupExpiryRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -29,10 +28,6 @@ export interface PatchGroupInput {
 }
 
 export type PatchGroupResult = GroupListItem & { features: Features };
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
 
 function bucketDateOf(isoTimestamp: string): string {
   return isoTimestamp.slice(0, 10);
@@ -104,8 +99,6 @@ export async function patchGroup(input: PatchGroupInput, deps: PatchGroupDeps): 
 
   const memberCount = (await deps.groupRepo.listMembers(input.groupId)).length;
   const newState = deriveGroupState(now, updatedMeta.endsAt, updatedMeta.expiryPolicy, features.limits.groupGraceDays);
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return {
     ...toGroupListItem(updatedMeta, "owner", memberCount, newState as Exclude<typeof newState, "expired">),

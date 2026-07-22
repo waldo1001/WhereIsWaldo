@@ -3,7 +3,6 @@ import { getGroupDetail } from "../../../src/domain/group/getGroupDetail";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
@@ -14,7 +13,6 @@ function buildDeps() {
   return {
     groupRepo: new InMemoryGroupRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
   };
 }
@@ -217,24 +215,5 @@ describe("domain/group/getGroupDetail", () => {
         "INTERNAL_ERROR",
       );
     });
-  });
-
-  it("records usage metric apiCalls under the caller's familyId when they have one", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-    deps.entitlementsRepo.seed("fam_x", { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
-
-    await getGroupDetail({ uid: "u1", familyId: "fam_x", groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("fam_x", "apiCalls", "2026-07-21")).toBe(1);
-  });
-
-  it("records usage metric apiCalls under the caller's uid when family-less", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await getGroupDetail({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("u1", "apiCalls", "2026-07-21")).toBe(1);
   });
 });

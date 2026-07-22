@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { pollLocateRequest } from "../../../src/domain/locate/pollLocateRequest";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryLocateRequestRepo } from "../../fakes/inMemoryLocateRequestRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -20,7 +19,6 @@ function buildDeps() {
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
   return {
     locateRequestRepo: new InMemoryLocateRequestRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     entitlementsRepo,
     clock: new FixedClock(new Date(NOW)),
   };
@@ -185,14 +183,5 @@ describe("domain/locate/pollLocateRequest", () => {
 
     expect(result.status).toBe("expired");
     expect(result.fix).toBeNull();
-  });
-
-  it("increments apiCalls usage on every poll", async () => {
-    const deps = buildDeps();
-    deps.locateRequestRepo.seed(record({ expiresAt: "2026-07-19T09:11:00Z" }));
-
-    await pollLocateRequest(baseInput(), deps);
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 });

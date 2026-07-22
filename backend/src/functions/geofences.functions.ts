@@ -59,10 +59,10 @@ app.http("getGeofences", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await getGeofences(
         { familyId: auth.familyId, ifNoneMatch: request.headers.get("if-none-match") },
-        { geofenceConfigRepo, entitlementsRepo, usageRepo, clock },
+        { geofenceConfigRepo, entitlementsRepo },
       );
       if (result.notModified) {
         return { status: 304, headers: { ETag: result.etag } };
@@ -85,11 +85,11 @@ app.http("replaceGeofences", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await replaceGeofences(
         { familyId: auth.familyId, role: auth.role, ifMatch: request.headers.get("if-match"), body },
-        { geofenceConfigRepo, deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { geofenceConfigRepo, deviceRepo, familyRepo, entitlementsRepo, pushSender },
       );
       return {
         status: 200,
@@ -109,7 +109,7 @@ app.http("reportGeofenceEvents", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await reportGeofenceEvents(
         {

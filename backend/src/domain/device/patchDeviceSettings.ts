@@ -14,8 +14,7 @@
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, patchDeviceSettingsRequestSchema } from "../../http/validate";
-import type { Clock } from "../../ports/support";
-import type { DeviceRecord, DeviceRepo, EntitlementsRepo, FamilyRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { DeviceRecord, DeviceRepo, EntitlementsRepo, FamilyRepo, Role } from "../../ports/repositories";
 import type { PushSender } from "../../ports/pushSender";
 import { getFeatures, type Features } from "../plan";
 import { findDeviceInFamily } from "../family/deviceFanout";
@@ -25,9 +24,7 @@ export interface PatchDeviceSettingsDeps {
   deviceRepo: DeviceRepo;
   familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   pushSender: PushSender;
-  clock: Clock;
 }
 
 export interface PatchDeviceSettingsInput {
@@ -43,10 +40,6 @@ export interface PatchDeviceSettingsInput {
 export interface PatchDeviceSettingsResult {
   device: DeviceView;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function patchDeviceSettings(
@@ -123,11 +116,6 @@ export async function patchDeviceSettings(
   // Write back into the DEVICE OWNER's own partition (002 §2.4) — not necessarily the
   // caller's, since a parent may be editing another member's device.
   await deps.deviceRepo.putDevice(updated.ownerUserId, updated);
-
-  // Usage (002 §2.9) stays familyId-keyed (or the caller's own uid family-less) — unrelated
-  // to the Devices/LastKnown re-key.
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   if (settingsChanged && updated.pushToken && !updated.pushInvalid) {
     try {

@@ -56,13 +56,13 @@ app.http("createFamily", {
     try {
       const auth = await authenticate(
         request.headers.get("authorization"),
-        { tokenVerifier, userRepo },
+        { tokenVerifier, userRepo, usageRepo, clock },
         { allowNoProfile: true },
       );
       const body: unknown = await request.json().catch(() => ({}));
       const result = await createFamily(
         { uid: auth.uid, familyId: auth.familyId, body },
-        { familyRepo, userRepo, entitlementsRepo, usageRepo, idGenerator, clock },
+        { familyRepo, userRepo, entitlementsRepo, idGenerator, clock },
       );
       return {
         status: 201,
@@ -84,10 +84,10 @@ app.http("getMyFamily", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await getMyFamily(
         { uid: auth.uid, familyId: auth.familyId },
-        { familyRepo, entitlementsRepo, usageRepo, clock },
+        { familyRepo, entitlementsRepo },
       );
       return {
         status: 200,
@@ -115,11 +115,11 @@ app.http("createInvite", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await createInvite(
         { uid: auth.uid, familyId: auth.familyId, role: auth.role, body },
-        { inviteRepo, entitlementsRepo, usageRepo, inviteCodeGenerator, clock },
+        { inviteRepo, entitlementsRepo, inviteCodeGenerator, clock },
       );
       return {
         status: 201,
@@ -141,12 +141,12 @@ app.http("updateMember", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
       const body: unknown = await request.json().catch(() => ({}));
       const result = await updateMember(
         { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId, body },
-        { familyRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { familyRepo, userRepo, entitlementsRepo },
       );
       return { status: 200, jsonBody: ok(result.member, result.features) };
     } catch (err) {
@@ -162,11 +162,11 @@ app.http("removeMember", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const { userId: targetUserId } = parseOrThrow(memberUserIdParamSchema, { userId: request.params.userId });
       await removeMember(
         { uid: auth.uid, familyId: auth.familyId, role: auth.role, targetUserId },
-        { familyRepo, userRepo, deviceRepo, usageRepo, clock },
+        { familyRepo, userRepo, deviceRepo },
       );
       return { status: 204 };
     } catch (err) {

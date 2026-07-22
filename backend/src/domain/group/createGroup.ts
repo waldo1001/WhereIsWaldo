@@ -11,7 +11,6 @@ import type {
   GroupExpiryRepo,
   GroupMeta,
   GroupRepo,
-  UsageRepo,
   UserRepo,
 } from "../../ports/repositories";
 import { normalizeInviteCode } from "../family/inviteCode";
@@ -25,7 +24,6 @@ export interface CreateGroupDeps {
   groupExpiryRepo: GroupExpiryRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   idGenerator: IdGenerator;
   /** Same 8-char Crockford format/normalization as family invite codes (005 §1, 001 §1.4). */
   inviteCodeGenerator: InviteCodeGenerator;
@@ -41,10 +39,6 @@ export type CreateGroupResult = GroupListItem & { createdAt: string; features: F
 
 const GROUP_ID_LENGTH = 20;
 const MIN_LEAD_TIME_MS = 60 * 60 * 1000; // 1h (001 §12.1)
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
 
 function bucketDateOf(isoTimestamp: string): string {
   return isoTimestamp.slice(0, 10);
@@ -127,7 +121,6 @@ export async function createGroup(input: CreateGroupInput, deps: CreateGroupDeps
     await deps.userRepo.createProfile(input.uid, { familyId: null, role: null, displayName });
   }
   await deps.groupExpiryRepo.putExpiryRow(bucketDateOf(body.endsAt), groupId, "expire");
-  await deps.usageRepo.increment(familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return {
     ...toGroupListItem(meta, "owner", 1, "active"),

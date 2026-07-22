@@ -7,7 +7,7 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 
@@ -16,7 +16,6 @@ export interface LeaveGroupDeps {
   groupLastKnownRepo: GroupLastKnownRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -25,10 +24,6 @@ export interface LeaveGroupInput {
   /** The caller's familyId from the resolved auth context (§1.5), null if family-less. */
   familyId: string | null;
   groupId: string;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 async function resolveFeatures(familyId: string | null, entitlementsRepo: EntitlementsRepo): Promise<Features> {
@@ -70,6 +65,4 @@ export async function leaveGroup(input: LeaveGroupInput, deps: LeaveGroupDeps): 
   await deps.groupRepo.removeMember(input.groupId, input.uid);
   await deps.userRepo.removeGroupMembership(input.uid, input.groupId);
   await deps.groupLastKnownRepo.removeMember(input.groupId, input.uid);
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 }

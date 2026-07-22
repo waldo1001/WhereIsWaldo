@@ -2,12 +2,11 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, LocateRequestRepo, LocateRequestStatus, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, LocateRequestRepo, LocateRequestStatus } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 
 export interface PollLocateRequestDeps {
   locateRequestRepo: LocateRequestRepo;
-  usageRepo: UsageRepo;
   entitlementsRepo: EntitlementsRepo;
   clock: Clock;
 }
@@ -40,10 +39,6 @@ export interface PollLocateRequestResult {
   expiresAt: string;
   fix: LocateRequestFix | null;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function pollLocateRequest(
@@ -81,8 +76,6 @@ export async function pollLocateRequest(
     status === "fulfilled" && record.fixJson
       ? { ...(JSON.parse(record.fixJson) as Omit<LocateRequestFix, "deviceId">), deviceId: record.targetDeviceId }
       : null;
-
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { requestId: record.requestId, status, expiresAt: record.expiresAt, fix, features };
 }

@@ -409,7 +409,6 @@ describe("domain/locate/createLocateRequest", () => {
     await createLocateRequest(baseInput(), deps);
 
     expect(await deps.usageRepo.get(FAMILY_ID, "locateRequests", "2026-07-19")).toBe(1);
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(3);
   });
 
   it("throws LIMIT_EXCEEDED with details.limit locateRequestsPerDay once the daily quota is reached", async () => {
@@ -433,7 +432,7 @@ describe("domain/locate/createLocateRequest", () => {
     expect(result.created).toBe(true);
   });
 
-  it("increments locateRequests and apiCalls usage exactly once on a 201 create", async () => {
+  it("increments locateRequests usage exactly once on a 201 create", async () => {
     const deps = buildDeps();
     await seedFamily(deps);
     deps.deviceRepo.seed(TARGET_UID, device());
@@ -441,6 +440,5 @@ describe("domain/locate/createLocateRequest", () => {
     await createLocateRequest(baseInput(), deps);
 
     expect(await deps.usageRepo.get(FAMILY_ID, "locateRequests", "2026-07-19")).toBe(1);
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 });

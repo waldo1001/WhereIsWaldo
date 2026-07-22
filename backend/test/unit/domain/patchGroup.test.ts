@@ -4,7 +4,6 @@ import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryGroupExpiryRepo } from "../../fakes/inMemoryGroupExpiryRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
@@ -16,7 +15,6 @@ function buildDeps() {
     groupRepo: new InMemoryGroupRepo(),
     groupExpiryRepo: new InMemoryGroupExpiryRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
   };
 }
@@ -258,15 +256,6 @@ describe("domain/group/patchGroup", () => {
       ),
       "GROUP_EXPIRED",
     );
-  });
-
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await patchGroup({ uid: "u1", familyId: null, groupId: "grp_a", body: { name: "New name" } }, deps);
-
-    expect(await deps.usageRepo.get("u1", "apiCalls", "2026-07-21")).toBe(1);
   });
 
   describe("features resolution", () => {

@@ -3,8 +3,7 @@
 // family-less caller gets their own devices only (same response shape, §1.5 step 4).
 
 import { AppError } from "../../http/errors";
-import type { Clock } from "../../ports/support";
-import type { DeviceRepo, EntitlementsRepo, FamilyRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { DeviceRepo, EntitlementsRepo, FamilyRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { listDevicesForMembers } from "../family/deviceFanout";
 import { toDeviceView, type DeviceView } from "./deviceView";
@@ -14,8 +13,6 @@ export interface ListMyDevicesDeps {
   familyRepo: FamilyRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
-  clock: Clock;
 }
 
 export interface ListMyDevicesInput {
@@ -31,13 +28,7 @@ export interface ListMyDevicesResult {
   features: Features;
 }
 
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
-
 export async function listMyDevices(input: ListMyDevicesInput, deps: ListMyDevicesDeps): Promise<ListMyDevicesResult> {
-  const now = deps.clock.now();
-
   if (input.familyId) {
     const familyId = input.familyId;
     const entitlements = await deps.entitlementsRepo.get(familyId);
@@ -51,8 +42,6 @@ export async function listMyDevices(input: ListMyDevicesInput, deps: ListMyDevic
     // Devices are keyed by ownerUserId, not familyId (002 §2.4, B8 re-key): fan out one
     // small partition scan per member instead of a single shared family scan.
     const devices = await listDevicesForMembers(members, deps.deviceRepo);
-
-    await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
     return {
       devices: devices.map((device) => ({
@@ -69,8 +58,6 @@ export async function listMyDevices(input: ListMyDevicesInput, deps: ListMyDevic
   const ownerDisplayName = profile?.displayName ?? input.uid;
   const devices = await deps.deviceRepo.listDevices(input.uid);
   const features = getFeatures("free");
-
-  await deps.usageRepo.increment(input.uid, "apiCalls", usageDate(now));
 
   return {
     devices: devices.map((device) => ({

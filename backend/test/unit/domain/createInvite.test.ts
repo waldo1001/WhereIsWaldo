@@ -3,7 +3,6 @@ import { createInvite } from "../../../src/domain/family/createInvite";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryInviteRepo } from "../../fakes/inMemoryInviteRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { SeqInviteCodeGenerator } from "../../fakes/seqInviteCodeGenerator";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -17,7 +16,6 @@ function buildDeps() {
   return {
     inviteRepo: new InMemoryInviteRepo(),
     entitlementsRepo,
-    usageRepo: new InMemoryUsageRepo(),
     inviteCodeGenerator: new SeqInviteCodeGenerator(),
     clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
   };
@@ -83,15 +81,6 @@ describe("domain/family/createInvite", () => {
     expect(stored?.inviteCode).toBe("7F3K9QRZ");
   });
 
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-
-    await createInvite({ uid: "u1", familyId: FAMILY_ID, role: "parent", body: { role: "member" } }, deps);
-
-    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
-  });
-
   it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
     const deps = buildDeps();
 
@@ -137,7 +126,6 @@ describe("domain/family/createInvite", () => {
     const deps = {
       inviteRepo: new InMemoryInviteRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
-      usageRepo: new InMemoryUsageRepo(),
       inviteCodeGenerator: new SeqInviteCodeGenerator(),
       clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
     };
