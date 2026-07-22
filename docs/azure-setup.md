@@ -90,7 +90,7 @@ Normative requirements in specs/006 §6; this is the click-path. Sign-in is **ph
 1. Create a Firebase project at console.firebase.google.com; note the **project ID** → `FIREBASE_PROJECT_ID`. *(Done 2026-07-20: `whereiswaldo-30e9c`.)*
 2. **Upgrade to the Blaze plan** (pay-as-you-go) — Phone Auth SMS sending requires it — and set a **Cloud Billing budget alert** (e.g. €5/month). Cost reality: SMS verifications bill per message (~US$0.01 US, ~US$0.06+ Belgium/EU); sign-ins are rare (Firebase refresh tokens keep a device signed in until sign-out/uninstall), so family-scale cost is cents/month — the "few euros/month" target is unaffected. The region allowlist (step 4) is the cost/abuse guardrail.
 3. **Authentication → Sign-in method: enable Phone.** Email/Password and every other provider stay **disabled** (specs/006 §1).
-4. **Authentication → Settings → SMS region policy → Allow-list: BE, NL, FR, DE, LU.** This is the primary SMS-pumping / toll-fraud mitigation — add a country only when a real user actually has a number there, never preemptively.
+4. **Authentication → Settings → SMS region policy** — two operating modes since 2026-07-22 (normative: specs/006 §6.3). **Family mode** (now): allow-list only the countries of real users (currently BE, NL); add a country only when a real user actually has a number there. **Open mode** (convention operation, task H8): all regions — allowed **only after** App Check (step 6) is *enforced* on both platforms, together with raising the budget alert (step 2) to €25/month. Never open regions while App Check is still in monitor mode; if the budget alert ever fires, re-narrow to family mode first and investigate (006 §7 runbook).
 5. **Test phone numbers** (Authentication → Sign-in method → Phone → "Phone numbers for testing"): add fictional numbers with fixed OTPs for dev/E2E/store review. The enabled number+code pairs live **only in the console** — an enabled test pair is a working credential; never commit one (docs/tests use obviously fictional `+3247000000x` placeholders). CI is unaffected (unit tests never touch Firebase; the placeholder `google-services.json` stays as-is).
 6. **App Check:** register both apps — Android: **Play Integrity** (requires the debug + release **SHA-256 fingerprints** on the Firebase Android app registration; re-download `google-services.json` afterwards); iOS: **App Attest** (DeviceCheck fallback). Leave enforcement for Authentication in **monitor** mode until both apps demonstrably sign in, then enforce (specs/006 §6.5).
 7. **Android app:** register package id (e.g. `be.wauters.whereswaldo`) **including the step-6 SHA-256s**, download `google-services.json` → `mobile/android/app/` (gitignored).
@@ -118,3 +118,21 @@ GitHub → Settings → Branches → protect `main`: require the status checks *
 1. Push any `backend/**` change to main → `backend` workflow: test → mutation → deploy all green.
 2. Sign in on a dev build with a **test phone number** (§3.5), then `curl https://$FUNCAPP.azurewebsites.net/api/v1/families/me -H "Authorization: Bearer <that-session's-id-token>"` → JSON envelope (`PROFILE_NOT_FOUND` for a fresh user is the expected happy sign — specs/001 §1.5).
 3. Azure portal → Function App → confirm the **app's data-plane** settings are endpoint URLs only (`TABLES_ENDPOINT`/`BLOB_ENDPOINT`, no account keys) and storage reads succeed via managed identity. Expected and fine: `AzureWebJobsStorage` / `WEBSITE_CONTENT*` connection strings exist — those belong to the Functions *host* (created by `az functionapp create` on the consumption plan), not to the app's data access.
+
+## 7. Join-link host (specs/007) — task H4's runnable checklist
+
+One Azure Static Web App (Free tier) hosts the public join-link landing page, the `.well-known` App/Universal Links files (deployed by W1's workflow), and later the legal pages (H7). No secrets: deploys authenticate via the existing OIDC app registration.
+
+```bash
+az staticwebapp create -n swa-whereiswaldo -g WhereIsWaldo -l westeurope --sku Free
+az staticwebapp show   -n swa-whereiswaldo -g WhereIsWaldo --query defaultHostname -o tsv
+```
+
+1. Record the returned hostname as **`JOIN_LINK_HOST`** (specs/007 §1) — it goes into both apps' build config (003 §13 / 004 §8) and is effectively permanent once QR codes are printed.
+2. Grant the CI principal access so the workflow can fetch the deployment token **at run time** (no stored secret — specs/007 §5):
+   ```bash
+   az role assignment create --assignee $AZURE_CLIENT_ID --role Contributor \
+     --scope $(az staticwebapp show -n swa-whereiswaldo -g WhereIsWaldo --query id -o tsv)
+   ```
+3. After W1 merges and deploys: verify `https://$JOIN_LINK_HOST/g` renders the landing page, and both `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` return JSON with `Content-Type: application/json` and **no redirect** (007 §3).
+4. Custom domain (optional, later — after the O10 naming decision): `az staticwebapp hostname set` + DNS; free managed cert. Old printed QR codes on the default hostname keep working (007 §1).
