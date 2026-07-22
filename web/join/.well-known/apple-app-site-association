@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["CHANGE-ME-TEAMID.com.whereswaldo.ios"],
+        "components": [{ "/": "/g" }]
+      }
+    ]
+  }
+}
