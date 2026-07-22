@@ -122,6 +122,16 @@ export async function registerDevice(
     // MUST NOT silently wipe out a previously-registered valid token).
     pushToken: body.pushToken ?? existing.pushToken,
     locationPushToken: body.locationPushToken ?? existing.locationPushToken,
+    // §8.5 token hygiene: a genuinely FRESH pushToken (different from what's on file)
+    // clears a previously-set pushInvalid — the flag reflects "is the CURRENT token
+    // known-bad", not "was some PAST token ever bad". Re-registering with the SAME
+    // already-invalid token must NOT clear it (that would let a permanently-broken
+    // token launder itself clean just by resending), and omitting pushToken entirely
+    // leaves the flag untouched too.
+    pushInvalid:
+      body.pushToken !== undefined && body.pushToken !== existing.pushToken
+        ? false
+        : existing.pushInvalid,
     lastSeenAt: now,
     // Parent-managed settings are NEVER reset by an upsert (§4.1):
     syncIntervalMinutes: existing.syncIntervalMinutes,

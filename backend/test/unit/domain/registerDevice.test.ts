@@ -132,6 +132,86 @@ describe("domain/device/registerDevice", () => {
     expect(stored?.pushToken).toBe("new-token");
   });
 
+  it("clears a previously-set pushInvalid when the upsert supplies a genuinely fresh pushToken (specs/001 §4.1/§8.5)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, {
+      deviceId: DEVICE_ID,
+      pushToken: "stale-token",
+      pushInvalid: true,
+    });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: {
+          deviceId: DEVICE_ID,
+          platform: "android",
+          model: "Pixel",
+          appVersion: "1.0.0",
+          pushToken: "brand-new-token",
+        },
+      },
+      deps,
+    );
+
+    expect(result.device.pushInvalid).toBe(false);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    expect(stored?.pushInvalid).toBe(false);
+    expect(stored?.pushToken).toBe("brand-new-token");
+  });
+
+  it("does NOT clear pushInvalid when the upsert re-supplies the SAME token that's already marked invalid (specs/001 §8.5 — re-registering a known-bad token must not silently clean it)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, {
+      deviceId: DEVICE_ID,
+      pushToken: "known-bad-token",
+      pushInvalid: true,
+    });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: {
+          deviceId: DEVICE_ID,
+          platform: "android",
+          model: "Pixel",
+          appVersion: "1.0.0",
+          pushToken: "known-bad-token",
+        },
+      },
+      deps,
+    );
+
+    expect(result.device.pushInvalid).toBe(true);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    expect(stored?.pushInvalid).toBe(true);
+  });
+
+  it("does NOT clear pushInvalid when the upsert omits pushToken entirely (no fresh token was supplied at all, specs/001 §8.5)", async () => {
+    const deps = buildDeps();
+    seedDevice(deps, {
+      deviceId: DEVICE_ID,
+      pushToken: "known-bad-token",
+      pushInvalid: true,
+    });
+
+    const result = await registerDevice(
+      {
+        uid: "u1",
+        familyId: FAMILY_ID,
+        body: { deviceId: DEVICE_ID, platform: "android", model: "Pixel", appVersion: "1.0.1" },
+      },
+      deps,
+    );
+
+    expect(result.device.pushInvalid).toBe(true);
+    const stored = await deps.deviceRepo.getDevice("u1", DEVICE_ID);
+    expect(stored?.pushInvalid).toBe(true);
+    expect(stored?.pushToken).toBe("known-bad-token");
+  });
+
   it("an upsert that omits pushToken/locationPushToken preserves the previously stored ones", async () => {
     const deps = buildDeps();
     seedDevice(deps, {
