@@ -51,6 +51,30 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="waldo" android:host="group-join" />
             </intent-filter>
+
+            <!-- A6 (specs/007-public-join-links.md, specs/003-android-client.md §12.3): the
+                 public https://{JOIN_LINK_HOST}/g#CODE join link (App Links — android:autoVerify
+                 triggers OS verification against the host's /.well-known/assetlinks.json, 007
+                 §3, using the same SHA-256 signing fingerprints as the Firebase/App Check
+                 registration). ${joinLinkHost} is a Gradle manifest placeholder sourced from the
+                 same JOIN_LINK_HOST build-config value (app/build.gradle.kts) so the two can
+                 never drift apart. Unlike the waldo:// filter above, the join code lives in the
+                 URL FRAGMENT (007 §1) — irrelevant to this intent-filter's own host/path matching
+                 (and, unlike the waldo:// filter's `code` query param, never delivered to a
+                 server/CDN/proxy at all) — so it is read directly off the delivered Uri and
+                 sanitized in MainActivity/WaldoNavHost via GroupJoinHttpsLinkParser, the same
+                 whitelist gate as the filter above. A wrong host or path is ignored, never
+                 mis-routed (007 §4); the waldo:// filter above remains supported unchanged (007
+                 §1: backward compatibility). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="${joinLinkHost}"
+                    android:path="/g" />
+            </intent-filter>
         </activity>
 
     </application>
