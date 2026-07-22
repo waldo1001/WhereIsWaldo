@@ -5,7 +5,6 @@ import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryGroupCodeRepo } from "../../fakes/inMemoryGroupCodeRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
@@ -18,7 +17,6 @@ function buildDeps() {
     groupCodeRepo: new InMemoryGroupCodeRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
   };
 }
@@ -398,25 +396,5 @@ describe("domain/group/joinGroup", () => {
         "INTERNAL_ERROR",
       );
     });
-  });
-
-  it("records usage metric apiCalls under the joiner's familyId when they have one", async () => {
-    const deps = buildDeps();
-    await seedGroup(deps, ACTIVE_META);
-    deps.userRepo.seed("u2", { familyId: "fam_x", role: "member", displayName: "Noor" });
-    deps.entitlementsRepo.seed("fam_x", { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
-
-    await joinGroup({ uid: "u2", body: { code: "ABCD1234" } }, deps);
-
-    expect(await deps.usageRepo.get("fam_x", "apiCalls", "2026-07-21")).toBe(1);
-  });
-
-  it("records usage metric apiCalls under the joiner's uid when family-less", async () => {
-    const deps = buildDeps();
-    await seedGroup(deps, ACTIVE_META);
-
-    await joinGroup({ uid: "u2", body: { code: "ABCD1234", displayName: "Noor" } }, deps);
-
-    expect(await deps.usageRepo.get("u2", "apiCalls", "2026-07-21")).toBe(1);
   });
 });

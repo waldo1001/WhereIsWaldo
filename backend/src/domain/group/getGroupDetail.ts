@@ -5,7 +5,7 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupMember, GroupRepo, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupMember, GroupRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 import { toGroupListItem, type GroupListItem } from "./groupView";
@@ -13,7 +13,6 @@ import { toGroupListItem, type GroupListItem } from "./groupView";
 export interface GetGroupDetailDeps {
   groupRepo: GroupRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -30,10 +29,6 @@ export type GetGroupDetailResult = GroupListItem & {
   members: GroupMember[] | null;
   features: Features;
 };
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
 
 export async function getGroupDetail(input: GetGroupDetailInput, deps: GetGroupDetailDeps): Promise<GetGroupDetailResult> {
   const meta = await deps.groupRepo.getGroupMeta(input.groupId);
@@ -70,8 +65,6 @@ export async function getGroupDetail(input: GetGroupDetailInput, deps: GetGroupD
   // Grace hides the roster from non-owner members (005 §2.3) — active and archived always
   // show it (archived is an intentional memento).
   const members = state === "ended" && membership.role !== "owner" ? null : allMembers;
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return {
     ...toGroupListItem(meta, membership.role, memberCount, state),

@@ -6,7 +6,7 @@
 import { AppError } from "../../http/errors";
 import { locationHistoryQuerySchema, parseOrThrow } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, FixSource, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, FixSource } from "../../ports/repositories";
 import type { HistoryStore } from "../../ports/historyStore";
 import { getFeatures, type Features } from "../plan";
 import { validateHistoryDateRange } from "./dateRange";
@@ -16,7 +16,6 @@ const DEFAULT_LIMIT = 500;
 export interface GetLocationHistoryDeps {
   historyStore: HistoryStore;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -43,10 +42,6 @@ export interface GetLocationHistoryResult {
   points: LocationHistoryPoint[];
   nextCursor: string | null;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function getLocationHistory(
@@ -91,8 +86,6 @@ export async function getLocationHistory(
     batteryPct: item.batteryPct,
     source: item.source,
   }));
-
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { points, nextCursor: page.nextCursor, features };
 }

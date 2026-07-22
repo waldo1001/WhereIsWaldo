@@ -143,8 +143,6 @@ export async function fulfillLocateRequest(
     await deps.usageRepo.increment(familyId, "fixes", date);
   }
 
-  await deps.usageRepo.increment(familyId, "apiCalls", date);
-
   if (isExpired) {
     if (record.status === "pending") {
       await deps.locateRequestRepo.update(familyId, record.requestId, { status: "expired" });

@@ -5,7 +5,6 @@ import { InMemoryGroupCodeRepo } from "../../fakes/inMemoryGroupCodeRepo";
 import { InMemoryGroupExpiryRepo } from "../../fakes/inMemoryGroupExpiryRepo";
 import { InMemoryGroupLastKnownRepo } from "../../fakes/inMemoryGroupLastKnownRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { GroupMeta } from "../../../src/ports/repositories";
@@ -19,7 +18,6 @@ function buildDeps() {
     groupExpiryRepo: new InMemoryGroupExpiryRepo(),
     groupLastKnownRepo: new InMemoryGroupLastKnownRepo(),
     userRepo: new InMemoryUserRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(NOW),
   };
 }
@@ -153,23 +151,5 @@ describe("domain/group/deleteGroup", () => {
     await deleteGroup({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
 
     expect(await deps.groupRepo.getGroupMeta("grp_a")).toBeNull();
-  });
-
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await deleteGroup({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("u1", "apiCalls", "2026-07-21")).toBe(1);
-  });
-
-  it("records usage metric apiCalls under the owner's familyId when they have one", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await deleteGroup({ uid: "u1", familyId: "fam_x", groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("fam_x", "apiCalls", "2026-07-21")).toBe(1);
   });
 });

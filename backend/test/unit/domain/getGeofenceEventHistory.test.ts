@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { getGeofenceEventHistory } from "../../../src/domain/history/getGeofenceEventHistory";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryHistoryStore } from "../../fakes/inMemoryHistoryStore";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -16,7 +15,6 @@ function buildDeps() {
   entitlementsRepo.seed(FAMILY_ID, { subscriptionStatus: "free", updatedAt: "2026-07-01T00:00:00Z" });
   return {
     historyStore: new InMemoryHistoryStore(),
-    usageRepo: new InMemoryUsageRepo(),
     entitlementsRepo,
     clock: new FixedClock(new Date(NOW)),
   };
@@ -52,7 +50,6 @@ describe("domain/history/getGeofenceEventHistory (001 §7.4)", () => {
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deps = {
       historyStore: new InMemoryHistoryStore(),
-      usageRepo: new InMemoryUsageRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // not seeded
       clock: new FixedClock(new Date(NOW)),
     };
@@ -228,17 +225,6 @@ describe("domain/history/getGeofenceEventHistory (001 §7.4)", () => {
       "2026-07-19T15:03:00Z",
       "2026-07-19T15:04:00Z",
     ]);
-  });
-
-  it("increments the apiCalls usage metric", async () => {
-    const deps = buildDeps();
-
-    await getGeofenceEventHistory(
-      { familyId: FAMILY_ID, query: { from: "2026-07-19", to: "2026-07-19" } },
-      deps,
-    );
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 
   it("returns features derived from PLAN_MATRIX.free", async () => {

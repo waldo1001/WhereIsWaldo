@@ -153,7 +153,6 @@ export async function createLocateRequest(
   const pending = await deps.locateRequestRepo.listPendingByTargetDevice(familyId, targetDeviceId);
   if (pending.length > 0) {
     const existing = pending[0]!;
-    await deps.usageRepo.increment(familyId, "apiCalls", date);
     return {
       created: false,
       requestId: existing.requestId,
@@ -208,7 +207,6 @@ export async function createLocateRequest(
   await deps.locateRequestRepo.create(record);
 
   await deps.usageRepo.increment(familyId, "locateRequests", date);
-  await deps.usageRepo.increment(familyId, "apiCalls", date);
 
   return {
     created: true,

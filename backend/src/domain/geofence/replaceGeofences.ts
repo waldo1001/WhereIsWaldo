@@ -9,8 +9,7 @@
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, replaceGeofencesRequestSchema } from "../../http/validate";
-import type { Clock } from "../../ports/support";
-import type { DeviceRepo, EntitlementsRepo, FamilyRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { DeviceRepo, EntitlementsRepo, FamilyRepo, Role } from "../../ports/repositories";
 import type { GeofenceConfigDocument, GeofenceConfigRepo, GeofenceEntry } from "../../ports/geofenceConfig";
 import type { PushSender } from "../../ports/pushSender";
 import { listDevicesForMembers } from "../family/deviceFanout";
@@ -21,9 +20,7 @@ export interface ReplaceGeofencesDeps {
   deviceRepo: DeviceRepo;
   familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   pushSender: PushSender;
-  clock: Clock;
 }
 
 export interface ReplaceGeofencesInput {
@@ -41,10 +38,6 @@ export interface ReplaceGeofencesResult {
   geofences: GeofenceEntry[];
   etag: string;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 /**
@@ -116,9 +109,6 @@ export async function replaceGeofences(
       currentEtag: outcome.currentEtag,
     });
   }
-
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   const members = await deps.familyRepo.listMembers(familyId);
   const devices = await listDevicesForMembers(members, deps.deviceRepo);

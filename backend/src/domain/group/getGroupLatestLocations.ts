@@ -7,7 +7,7 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, GroupRole, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, GroupRole } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 
@@ -15,7 +15,6 @@ export interface GetGroupLatestLocationsDeps {
   groupRepo: GroupRepo;
   groupLastKnownRepo: GroupLastKnownRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -48,10 +47,6 @@ export interface GroupLatestMember {
 export interface GetGroupLatestLocationsResult {
   members: GroupLatestMember[];
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function getGroupLatestLocations(
@@ -115,8 +110,6 @@ export async function getGroupLatestLocations(
       },
     };
   });
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return { members, features };
 }

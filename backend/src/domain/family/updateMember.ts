@@ -2,16 +2,13 @@
 
 import { AppError } from "../../http/errors";
 import { parseOrThrow, updateMemberRequestSchema } from "../../http/validate";
-import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, FamilyMember, FamilyRepo, Role, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, FamilyMember, FamilyRepo, Role, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 
 export interface UpdateMemberDeps {
   familyRepo: FamilyRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
-  clock: Clock;
 }
 
 export interface UpdateMemberInput {
@@ -26,10 +23,6 @@ export interface UpdateMemberInput {
 export interface UpdateMemberResult {
   member: FamilyMember;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function updateMember(input: UpdateMemberInput, deps: UpdateMemberDeps): Promise<UpdateMemberResult> {
@@ -64,9 +57,6 @@ export async function updateMember(input: UpdateMemberInput, deps: UpdateMemberD
 
   const updated = await deps.familyRepo.updateMember(familyId, input.targetUserId, patch);
   await deps.userRepo.updateProfile(input.targetUserId, patch);
-
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { member: updated, features };
 }

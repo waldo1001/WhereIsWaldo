@@ -46,13 +46,13 @@ app.http("acceptInvite", {
     try {
       const auth = await authenticate(
         request.headers.get("authorization"),
-        { tokenVerifier, userRepo },
+        { tokenVerifier, userRepo, usageRepo, clock },
         { allowNoProfile: true },
       );
       const body: unknown = await request.json().catch(() => ({}));
       const result = await acceptInvite(
         { uid: auth.uid, familyId: auth.familyId, body },
-        { inviteRepo, familyRepo, userRepo, entitlementsRepo, usageRepo, clock },
+        { inviteRepo, familyRepo, userRepo, entitlementsRepo, clock },
       );
       return {
         status: 200,

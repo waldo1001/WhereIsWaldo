@@ -9,7 +9,6 @@ import type {
   FamilyRepo,
   Role,
   UserRepo,
-  UsageRepo,
 } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 
@@ -17,7 +16,6 @@ export interface CreateFamilyDeps {
   familyRepo: FamilyRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   idGenerator: IdGenerator;
   clock: Clock;
 }
@@ -38,10 +36,6 @@ export interface CreateFamilyResult {
 
 const FAMILY_ID_LENGTH = 20;
 
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
-
 export async function createFamily(input: CreateFamilyInput, deps: CreateFamilyDeps): Promise<CreateFamilyResult> {
   if (input.familyId) {
     throw new AppError("FAMILY_ALREADY_MEMBER", "caller already belongs to a family");
@@ -59,7 +53,6 @@ export async function createFamily(input: CreateFamilyInput, deps: CreateFamilyD
   await deps.familyRepo.addMember(familyId, member);
   await deps.userRepo.createProfile(input.uid, { familyId, role: "parent", displayName });
   await deps.entitlementsRepo.create(familyId, "free", createdAt);
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return {
     familyId,

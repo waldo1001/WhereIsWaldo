@@ -4,7 +4,6 @@ import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
 import { InMemoryLastKnownRepo } from "../../fakes/inMemoryLastKnownRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -44,7 +43,6 @@ async function buildDeps() {
     familyRepo,
     deviceRepo: new InMemoryDeviceRepo(),
     lastKnownRepo: new InMemoryLastKnownRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     entitlementsRepo,
     clock: new FixedClock(new Date(NOW)),
   };
@@ -272,20 +270,6 @@ describe("domain/location/latestLocations", () => {
     expect(noor?.devices[0]?.lat).toBe(2);
   });
 
-  it("increments the apiCalls usage metric", async () => {
-    const deps = await buildDeps();
-    await deps.familyRepo.addMember(FAMILY_ID, {
-      userId: "u1",
-      role: "parent",
-      displayName: "Eric",
-      joinedAt: "2026-07-01T00:00:00Z",
-    });
-
-    await latestLocations({ familyId: FAMILY_ID }, deps);
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
-  });
-
   it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
     const deps = await buildDeps();
 
@@ -318,7 +302,6 @@ describe("domain/location/latestLocations", () => {
       familyRepo,
       deviceRepo: new InMemoryDeviceRepo(),
       lastKnownRepo: new InMemoryLastKnownRepo(),
-      usageRepo: new InMemoryUsageRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
       clock: new FixedClock(new Date(NOW)),
     };

@@ -13,7 +13,6 @@ import type {
   FixSource,
   LastKnownRecord,
   LastKnownRepo,
-  UsageRepo,
 } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { listDevicesForMembers, listLastKnownsForMembers } from "../family/deviceFanout";
@@ -22,7 +21,6 @@ export interface LatestLocationsDeps {
   familyRepo: FamilyRepo;
   deviceRepo: DeviceRepo;
   lastKnownRepo: LastKnownRepo;
-  usageRepo: UsageRepo;
   entitlementsRepo: EntitlementsRepo;
   clock: Clock;
 }
@@ -56,10 +54,6 @@ export interface MemberLocations {
 export interface LatestLocationsResult {
   members: MemberLocations[];
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 function toDeviceLocation(device: DeviceRecord, lastKnown: LastKnownRecord | undefined, now: Date): MemberDeviceLocation {
@@ -143,8 +137,6 @@ export async function latestLocations(
       toDeviceLocation(device, lastKnownByDevice.get(device.deviceId), now),
     ),
   }));
-
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { members: memberLocations, features };
 }

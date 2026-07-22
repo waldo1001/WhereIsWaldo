@@ -3,7 +3,7 @@
 import { AppError } from "../../http/errors";
 import { createInviteRequestSchema, parseOrThrow } from "../../http/validate";
 import type { Clock, InviteCodeGenerator } from "../../ports/support";
-import type { EntitlementsRepo, InviteRecord, InviteRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, InviteRecord, InviteRepo, Role } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { normalizeInviteCode } from "./inviteCode";
 
@@ -12,7 +12,6 @@ const INVITE_TTL_HOURS = 72;
 export interface CreateInviteDeps {
   inviteRepo: InviteRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   inviteCodeGenerator: InviteCodeGenerator;
   clock: Clock;
 }
@@ -30,10 +29,6 @@ export interface CreateInviteResult {
   role: Role;
   expiresAt: string;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function createInvite(input: CreateInviteInput, deps: CreateInviteDeps): Promise<CreateInviteResult> {
@@ -68,7 +63,6 @@ export async function createInvite(input: CreateInviteInput, deps: CreateInviteD
     expiresAt,
   };
   await deps.inviteRepo.createInvite(invite);
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { inviteCode, role: body.role, expiresAt, features };
 }

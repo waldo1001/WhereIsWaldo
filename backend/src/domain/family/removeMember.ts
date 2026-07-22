@@ -4,15 +4,12 @@
 // single per-owner partition wipe — no familyId needed at all.
 
 import { AppError } from "../../http/errors";
-import type { Clock } from "../../ports/support";
-import type { DeviceRepo, FamilyRepo, Role, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { DeviceRepo, FamilyRepo, Role, UserRepo } from "../../ports/repositories";
 
 export interface RemoveMemberDeps {
   familyRepo: FamilyRepo;
   userRepo: UserRepo;
   deviceRepo: DeviceRepo;
-  usageRepo: UsageRepo;
-  clock: Clock;
 }
 
 export interface RemoveMemberInput {
@@ -21,10 +18,6 @@ export interface RemoveMemberInput {
   familyId: string | null;
   role: Role | null;
   targetUserId: string;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 /** Bare 204 (specs/001 §3.6) — no response body, so no `features` to return. */
@@ -55,7 +48,4 @@ export async function removeMember(input: RemoveMemberInput, deps: RemoveMemberD
   await deps.familyRepo.removeMember(familyId, input.targetUserId);
   await deps.userRepo.deleteProfile(input.targetUserId);
   await deps.deviceRepo.deleteDevicesByOwner(input.targetUserId);
-
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 }

@@ -3,8 +3,6 @@ import { getMyFamily } from "../../../src/domain/family/getMyFamily";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
-import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 
 const FAMILY_ID = "fam_9J2Kq7Lm3NpR5sTvWxYz";
@@ -13,8 +11,6 @@ function buildDeps() {
   return {
     familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
-    clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
   };
 }
 
@@ -69,16 +65,6 @@ describe("domain/family/getMyFamily", () => {
     expect(result.me).toEqual({ userId: "u2", role: "member" });
   });
 
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-    await seedFamily(deps);
-
-    await getMyFamily({ uid: "u1", familyId: FAMILY_ID }, deps);
-
-    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
-  });
-
   it("throws FAMILY_NOT_FOUND when the caller has no family", async () => {
     const deps = buildDeps();
 
@@ -110,11 +96,9 @@ describe("domain/family/getMyFamily", () => {
       joinedAt: "2026-07-19T08:00:00Z",
     });
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
-    const usageRepo = new InMemoryUsageRepo();
-    const clock = new FixedClock(new Date("2026-07-19T09:00:00Z"));
 
     await expectAppError(
-      getMyFamily({ uid: "u1", familyId: FAMILY_ID }, { familyRepo, entitlementsRepo, usageRepo, clock }),
+      getMyFamily({ uid: "u1", familyId: FAMILY_ID }, { familyRepo, entitlementsRepo }),
       "INTERNAL_ERROR",
     );
   });

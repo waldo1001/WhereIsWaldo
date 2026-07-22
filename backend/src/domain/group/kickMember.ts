@@ -7,7 +7,7 @@
 
 import { AppError } from "../../http/errors";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupLastKnownRepo, GroupRepo, UserRepo } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
 
@@ -16,7 +16,6 @@ export interface KickMemberDeps {
   groupLastKnownRepo: GroupLastKnownRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -26,10 +25,6 @@ export interface KickMemberInput {
   familyId: string | null;
   groupId: string;
   targetUserId: string;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 async function resolveFeatures(familyId: string | null, entitlementsRepo: EntitlementsRepo): Promise<Features> {
@@ -80,6 +75,4 @@ export async function kickMember(input: KickMemberInput, deps: KickMemberDeps): 
   await deps.groupRepo.removeMember(input.groupId, input.targetUserId);
   await deps.userRepo.removeGroupMembership(input.targetUserId, input.groupId);
   await deps.groupLastKnownRepo.removeMember(input.groupId, input.targetUserId);
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 }

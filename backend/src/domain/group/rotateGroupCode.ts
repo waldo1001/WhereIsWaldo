@@ -14,7 +14,7 @@
 // invariant the way extending endsAt would.
 import { AppError } from "../../http/errors";
 import type { Clock, InviteCodeGenerator } from "../../ports/support";
-import type { EntitlementsRepo, GroupCodeRepo, GroupRepo, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupCodeRepo, GroupRepo } from "../../ports/repositories";
 import { normalizeInviteCode } from "../family/inviteCode";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
@@ -23,7 +23,6 @@ export interface RotateGroupCodeDeps {
   groupRepo: GroupRepo;
   groupCodeRepo: GroupCodeRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   /** Same 8-char Crockford format/normalization as family invite codes (005 §1, 001 §1.4). */
   inviteCodeGenerator: InviteCodeGenerator;
   clock: Clock;
@@ -40,10 +39,6 @@ export interface RotateGroupCodeResult {
   code: string;
   rotatedAt: string;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 async function resolveFeatures(familyId: string | null, entitlementsRepo: EntitlementsRepo): Promise<Features> {
@@ -88,8 +83,6 @@ export async function rotateGroupCode(
   await deps.groupCodeRepo.createCode(newCode, { groupId: input.groupId, createdAt: rotatedAt });
   await deps.groupRepo.updateGroupMeta(input.groupId, { code: newCode });
   await deps.groupCodeRepo.deleteCode(meta.code);
-
-  await deps.usageRepo.increment(input.familyId ?? input.uid, "apiCalls", usageDate(now));
 
   return { code: newCode, rotatedAt, features };
 }

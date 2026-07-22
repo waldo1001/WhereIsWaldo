@@ -550,17 +550,6 @@ describe("domain/geofence/reportGeofenceEvents", () => {
     expect(await deps.usageRepo.get(FAMILY_ID, "geofenceEvents", "2026-07-19")).toBe(2);
   });
 
-  it("increments apiCalls once per request, even when the whole batch is duplicates", async () => {
-    const deps = buildDeps();
-    await seedFamily(deps);
-    seedReporterDevice(deps);
-
-    await reportGeofenceEvents(baseInput(), deps);
-    await reportGeofenceEvents(baseInput(), deps); // fully duplicate replay
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(2);
-  });
-
   it("does not increment geofenceEvents usage when the whole batch is duplicates", async () => {
     const deps = buildDeps();
     await seedFamily(deps);

@@ -4,7 +4,6 @@ import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { SeqIdGenerator } from "../../fakes/seqIdGenerator";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
@@ -14,7 +13,6 @@ function buildDeps() {
     familyRepo: new InMemoryFamilyRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     idGenerator: new SeqIdGenerator(),
     clock: new FixedClock(new Date("2026-07-19T09:00:00Z")),
   };
@@ -146,17 +144,5 @@ describe("domain/family/createFamily", () => {
       "VALIDATION_FAILED",
       { fields: ["(root)"] },
     );
-  });
-
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-
-    const result = await createFamily(
-      { uid: "u1", familyId: null, body: { familyName: "Wauters", displayName: "Eric" } },
-      deps,
-    );
-
-    const count = await deps.usageRepo.get(result.familyId, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
   });
 });

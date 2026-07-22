@@ -230,7 +230,6 @@ export async function reportLocations(
   // to the Devices/LastKnown re-key.
   const usagePartition = input.familyId ?? input.uid;
   const date = usageDate(now);
-  await deps.usageRepo.increment(usagePartition, "apiCalls", date);
   await deps.usageRepo.increment(usagePartition, "locationBatches", date);
   await deps.usageRepo.increment(usagePartition, "fixes", date, body.fixes.length);
 

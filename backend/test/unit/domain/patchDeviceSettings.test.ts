@@ -3,9 +3,7 @@ import { patchDeviceSettings } from "../../../src/domain/device/patchDeviceSetti
 import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FakePushSender } from "../../fakes/fakePushSender";
-import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { DeviceRecord } from "../../../src/ports/repositories";
 
@@ -19,9 +17,7 @@ function buildDeps() {
     deviceRepo: new InMemoryDeviceRepo(),
     familyRepo: new InMemoryFamilyRepo(),
     entitlementsRepo,
-    usageRepo: new InMemoryUsageRepo(),
     pushSender: new FakePushSender(),
-    clock: new FixedClock(new Date("2026-07-19T09:05:00Z")),
   };
 }
 
@@ -418,9 +414,7 @@ describe("domain/device/patchDeviceSettings", () => {
     const deviceRepo = new InMemoryDeviceRepo();
     const familyRepo = new InMemoryFamilyRepo();
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
-    const usageRepo = new InMemoryUsageRepo();
     const pushSender = new FakePushSender();
-    const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
     deviceRepo.seed("u1", {
       deviceId: DEVICE_ID,
       ownerUserId: "u1",
@@ -438,36 +432,10 @@ describe("domain/device/patchDeviceSettings", () => {
     await expectAppError(
       patchDeviceSettings(
         { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
-        { deviceRepo, familyRepo, entitlementsRepo, usageRepo, pushSender, clock },
+        { deviceRepo, familyRepo, entitlementsRepo, pushSender },
       ),
       "INTERNAL_ERROR",
     );
-  });
-
-  it("records usage metric apiCalls under the familyId for a family member", async () => {
-    const deps = buildDeps();
-    seedDevice(deps, {});
-
-    await patchDeviceSettings(
-      { uid: "u1", familyId: FAMILY_ID, role: "parent", deviceId: DEVICE_ID, body: { trackingEnabled: false } },
-      deps,
-    );
-
-    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
-  });
-
-  it("records usage metric apiCalls under the caller's own uid for a family-less caller", async () => {
-    const deps = buildDeps();
-    seedDevice(deps, { ownerUserId: "u3" });
-
-    await patchDeviceSettings(
-      { uid: "u3", familyId: null, role: null, deviceId: DEVICE_ID, body: { trackingEnabled: false } },
-      deps,
-    );
-
-    const count = await deps.usageRepo.get("u3", "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
   });
 
   it("never leaks pushToken/locationPushToken in the response (write-only, §4.1)", async () => {

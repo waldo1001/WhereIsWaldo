@@ -5,7 +5,7 @@
 import { AppError } from "../../http/errors";
 import { geofenceEventHistoryQuerySchema, parseOrThrow } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo } from "../../ports/repositories";
 import type { HistoryStore } from "../../ports/historyStore";
 import { getFeatures, type Features } from "../plan";
 import { validateHistoryDateRange } from "./dateRange";
@@ -15,7 +15,6 @@ const DEFAULT_LIMIT = 500;
 export interface GetGeofenceEventHistoryDeps {
   historyStore: HistoryStore;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -45,10 +44,6 @@ export interface GetGeofenceEventHistoryResult {
   events: GeofenceHistoryEvent[];
   nextCursor: string | null;
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function getGeofenceEventHistory(
@@ -95,8 +90,6 @@ export async function getGeofenceEventHistory(
     recordedAt: item.recordedAt,
     receivedAt: item.receivedAt,
   }));
-
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return { events, nextCursor: page.nextCursor, features };
 }

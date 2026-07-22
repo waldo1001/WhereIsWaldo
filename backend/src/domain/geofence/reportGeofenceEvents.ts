@@ -200,7 +200,6 @@ export async function reportGeofenceEvents(
   if (accepted > 0) {
     await deps.usageRepo.increment(familyId, "geofenceEvents", date, accepted);
   }
-  await deps.usageRepo.increment(familyId, "apiCalls", date);
 
   return { accepted, duplicates, deviceSettings, geofenceEtag, features };
 }

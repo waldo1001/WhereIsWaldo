@@ -193,7 +193,6 @@ describe("domain/location/reportLocations", () => {
     expect(deps.historyStore.fixes.length).toBe(1); // no second append
     expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(1);
     expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(1);
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 
   it("stores the batch's actual receivedAt and fixCount in the idempotency marker meta", async () => {
@@ -606,7 +605,7 @@ describe("domain/location/reportLocations", () => {
     expect(withOptionals!.fix.bearingDeg).toBe(90);
   });
 
-  it("increments apiCalls, locationBatches, and fixes usage on an accepted batch", async () => {
+  it("increments locationBatches and fixes usage on an accepted batch", async () => {
     const deps = buildDeps();
     seedDevice(deps);
 
@@ -624,7 +623,6 @@ describe("domain/location/reportLocations", () => {
       deps,
     );
 
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
     expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(1);
     expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(3);
   });
@@ -638,7 +636,6 @@ describe("domain/location/reportLocations", () => {
       "VALIDATION_FAILED",
     );
 
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(0);
     expect(await deps.usageRepo.get(FAMILY_ID, "locationBatches", "2026-07-19")).toBe(0);
     expect(await deps.usageRepo.get(FAMILY_ID, "fixes", "2026-07-19")).toBe(0);
   });
@@ -759,7 +756,6 @@ describe("domain/location/reportLocations", () => {
 
       await reportLocations(familyLessInput(), deps);
 
-      expect(await deps.usageRepo.get(USER_ID, "apiCalls", "2026-07-19")).toBe(1);
       expect(await deps.usageRepo.get(USER_ID, "locationBatches", "2026-07-19")).toBe(1);
       expect(await deps.usageRepo.get(USER_ID, "fixes", "2026-07-19")).toBe(1);
     });

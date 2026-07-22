@@ -3,7 +3,6 @@ import { getGeofences } from "../../../src/domain/geofence/getGeofences";
 import { getFeatures } from "../../../src/domain/plan";
 import { InMemoryGeofenceConfigRepo } from "../../fakes/inMemoryGeofenceConfigRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 
@@ -16,7 +15,6 @@ function buildDeps() {
   return {
     geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
     entitlementsRepo,
-    usageRepo: new InMemoryUsageRepo(),
     clock: new FixedClock(new Date(NOW)),
   };
 }
@@ -31,7 +29,6 @@ describe("domain/geofence/getGeofences", () => {
     const deps = {
       geofenceConfigRepo: new InMemoryGeofenceConfigRepo(),
       entitlementsRepo: new InMemoryEntitlementsRepo(), // deliberately not seeded
-      usageRepo: new InMemoryUsageRepo(),
       clock: new FixedClock(new Date(NOW)),
     };
     await expectAppError(getGeofences({ familyId: FAMILY_ID, ifNoneMatch: null }, deps), "INTERNAL_ERROR");
@@ -114,22 +111,5 @@ describe("domain/geofence/getGeofences", () => {
     const result = await getGeofences({ familyId: FAMILY_ID, ifNoneMatch: "0" }, deps);
 
     expect(result.notModified).toBe(true);
-  });
-
-  it("increments apiCalls once on the success path (200 flow)", async () => {
-    const deps = buildDeps();
-
-    await getGeofences({ familyId: FAMILY_ID, ifNoneMatch: null }, deps);
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
-  });
-
-  it("increments apiCalls on the 304 (notModified) path too — still a successful authenticated request", async () => {
-    const deps = buildDeps();
-    deps.geofenceConfigRepo.seedConfig(FAMILY_ID, { version: 4, geofences: [] }, '"0x8DC5F3A9B2C1D40"');
-
-    await getGeofences({ familyId: FAMILY_ID, ifNoneMatch: '"0x8DC5F3A9B2C1D40"' }, deps);
-
-    expect(await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19")).toBe(1);
   });
 });

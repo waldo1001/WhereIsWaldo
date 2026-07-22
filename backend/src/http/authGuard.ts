@@ -2,7 +2,8 @@
 
 import { AppError } from "./errors";
 import { TokenExpiredError, TokenInvalidError, type TokenVerifier } from "../ports/tokenVerifier";
-import type { Role, UserRepo } from "../ports/repositories";
+import type { Role, UsageRepo, UserRepo } from "../ports/repositories";
+import type { Clock } from "../ports/support";
 
 export interface AuthContext {
   uid: string;
@@ -13,6 +14,8 @@ export interface AuthContext {
 export interface AuthGuardDeps {
   tokenVerifier: TokenVerifier;
   userRepo: UserRepo;
+  usageRepo: UsageRepo;
+  clock: Clock;
 }
 
 export interface AuthGuardOptions {
@@ -26,9 +29,24 @@ export interface AuthGuardOptions {
 
 const BEARER_PREFIX = "Bearer ";
 
+function usageDate(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
 /**
  * Resolves {uid, familyId, role} from the Authorization header (§1.5 steps 1-3).
  * Role checks against the endpoint's required role (§1.6) are the caller's responsibility.
+ *
+ * specs/001 §9 (B14) — apiCalls increments exactly once here, immediately after token
+ * verification succeeds (the actual "authenticated" boundary), regardless of what happens
+ * afterward: a later 2xx, a business-reason 4xx from the domain layer, or even the
+ * PROFILE_NOT_FOUND thrown a few lines below. This is the single call site for the whole
+ * backend — every domain use-case used to increment this on its own success path only,
+ * which under-counted any authenticated request that failed for a business reason. A 401
+ * (thrown above, before this point) never increments. The familyId-or-uid partition rule is
+ * unchanged (002 §2.9): familyId when the caller has one, else their own uid — including the
+ * moment a not-yet-bootstrapped caller (no profile at all) hits one of the four §1.5.3
+ * bootstrap endpoints, where uid is all that's known yet.
  */
 export async function authenticate(
   authorizationHeader: string | undefined | null,
@@ -58,6 +76,9 @@ export async function authenticate(
   }
 
   const profile = await deps.userRepo.getProfile(uid);
+  const usagePartition = profile?.familyId ?? uid;
+  await deps.usageRepo.increment(usagePartition, "apiCalls", usageDate(deps.clock.now()));
+
   if (!profile) {
     if (options.allowNoProfile) {
       return { uid, familyId: null, role: null };

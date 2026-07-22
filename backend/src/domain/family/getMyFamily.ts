@@ -1,15 +1,12 @@
 // specs/001 §3.2 — get my family. Pure domain logic: no Azure/Google imports.
 
 import { AppError } from "../../http/errors";
-import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, FamilyMember, FamilyRepo, Role, UsageRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, FamilyMember, FamilyRepo, Role } from "../../ports/repositories";
 import { getFeatures, type Features } from "../plan";
 
 export interface GetMyFamilyDeps {
   familyRepo: FamilyRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
-  clock: Clock;
 }
 
 export interface GetMyFamilyInput {
@@ -25,10 +22,6 @@ export interface GetMyFamilyResult {
   me: { userId: string; role: Role };
   members: FamilyMember[];
   features: Features;
-}
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
 }
 
 export async function getMyFamily(input: GetMyFamilyInput, deps: GetMyFamilyDeps): Promise<GetMyFamilyResult> {
@@ -52,9 +45,6 @@ export async function getMyFamily(input: GetMyFamilyInput, deps: GetMyFamilyDeps
     throw new AppError("INTERNAL_ERROR", "family has no entitlements record");
   }
   const features = getFeatures(entitlements.subscriptionStatus);
-
-  const now = deps.clock.now();
-  await deps.usageRepo.increment(familyId, "apiCalls", usageDate(now));
 
   return {
     familyId: meta.familyId,

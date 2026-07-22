@@ -53,10 +53,10 @@ app.http("getLocationHistory", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await getLocationHistory(
         { familyId: auth.familyId, query: queryToObject(request) },
-        { historyStore, entitlementsRepo, usageRepo, clock },
+        { historyStore, entitlementsRepo, clock },
       );
       return {
         status: 200,
@@ -75,10 +75,10 @@ app.http("getGeofenceEventHistory", {
   handler: async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
     const requestId = newRequestId();
     try {
-      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo });
+      const auth = await authenticate(request.headers.get("authorization"), { tokenVerifier, userRepo, usageRepo, clock });
       const result = await getGeofenceEventHistory(
         { familyId: auth.familyId, query: queryToObject(request) },
-        { historyStore, entitlementsRepo, usageRepo, clock },
+        { historyStore, entitlementsRepo, clock },
       );
       return {
         status: 200,

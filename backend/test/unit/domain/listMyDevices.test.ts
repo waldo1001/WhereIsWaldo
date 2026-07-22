@@ -5,8 +5,6 @@ import { InMemoryDeviceRepo } from "../../fakes/inMemoryDeviceRepo";
 import { InMemoryFamilyRepo } from "../../fakes/inMemoryFamilyRepo";
 import { InMemoryUserRepo } from "../../fakes/inMemoryUserRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
-import { FixedClock } from "../../fakes/fixedClock";
 import { expectAppError } from "../../support/expectAppError";
 import type { DeviceRecord } from "../../../src/ports/repositories";
 
@@ -18,8 +16,6 @@ function buildDeps() {
     familyRepo: new InMemoryFamilyRepo(),
     userRepo: new InMemoryUserRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
-    clock: new FixedClock(new Date("2026-07-19T09:05:00Z")),
   };
 }
 
@@ -109,16 +105,6 @@ describe("domain/device/listMyDevices", () => {
     expect(result.devices.map((d) => d.deviceId)).toEqual(["device-1"]);
   });
 
-  it("records usage metric apiCalls under the familyId for a family member", async () => {
-    const deps = buildDeps();
-    await seedFamily(deps);
-
-    await listMyDevices({ uid: "u1", familyId: FAMILY_ID }, deps);
-
-    const count = await deps.usageRepo.get(FAMILY_ID, "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
-  });
-
   it("throws INTERNAL_ERROR when the family has no Entitlements record", async () => {
     const deviceRepo = new InMemoryDeviceRepo();
     const familyRepo = new InMemoryFamilyRepo();
@@ -130,11 +116,9 @@ describe("domain/device/listMyDevices", () => {
     });
     const userRepo = new InMemoryUserRepo();
     const entitlementsRepo = new InMemoryEntitlementsRepo(); // deliberately not seeded
-    const usageRepo = new InMemoryUsageRepo();
-    const clock = new FixedClock(new Date("2026-07-19T09:05:00Z"));
 
     await expectAppError(
-      listMyDevices({ uid: "u1", familyId: FAMILY_ID }, { deviceRepo, familyRepo, userRepo, entitlementsRepo, usageRepo, clock }),
+      listMyDevices({ uid: "u1", familyId: FAMILY_ID }, { deviceRepo, familyRepo, userRepo, entitlementsRepo }),
       "INTERNAL_ERROR",
     );
   });
@@ -153,16 +137,6 @@ describe("domain/device/listMyDevices", () => {
       ownerDisplayName: "Group-only Sam",
     });
     expect(result.features).toEqual(getFeatures("free"));
-  });
-
-  it("records usage metric apiCalls under the caller's own uid for a family-less caller (002 §2.9)", async () => {
-    const deps = buildDeps();
-    await deps.userRepo.createProfile("u3", { familyId: null, role: null, displayName: "Group-only Sam" });
-
-    await listMyDevices({ uid: "u3", familyId: null }, deps);
-
-    const count = await deps.usageRepo.get("u3", "apiCalls", "2026-07-19");
-    expect(count).toBe(1);
   });
 
   it("returns an empty devices array for a family-less caller with no devices yet", async () => {

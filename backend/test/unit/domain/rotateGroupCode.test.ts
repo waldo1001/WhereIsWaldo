@@ -3,7 +3,6 @@ import { rotateGroupCode } from "../../../src/domain/group/rotateGroupCode";
 import { InMemoryGroupRepo } from "../../fakes/inMemoryGroupRepo";
 import { InMemoryGroupCodeRepo } from "../../fakes/inMemoryGroupCodeRepo";
 import { InMemoryEntitlementsRepo } from "../../fakes/inMemoryEntitlementsRepo";
-import { InMemoryUsageRepo } from "../../fakes/inMemoryUsageRepo";
 import { FixedClock } from "../../fakes/fixedClock";
 import { SeqInviteCodeGenerator } from "../../fakes/seqInviteCodeGenerator";
 import { expectAppError } from "../../support/expectAppError";
@@ -16,7 +15,6 @@ function buildDeps() {
     groupRepo: new InMemoryGroupRepo(),
     groupCodeRepo: new InMemoryGroupCodeRepo(),
     entitlementsRepo: new InMemoryEntitlementsRepo(),
-    usageRepo: new InMemoryUsageRepo(),
     inviteCodeGenerator: new SeqInviteCodeGenerator(),
     clock: new FixedClock(NOW),
   };
@@ -133,15 +131,6 @@ describe("domain/group/rotateGroupCode", () => {
     const result = await rotateGroupCode({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
 
     expect(result.code).toBe("00000001");
-  });
-
-  it("records usage metric apiCalls", async () => {
-    const deps = buildDeps();
-    await seed(deps, ACTIVE_META);
-
-    await rotateGroupCode({ uid: "u1", familyId: null, groupId: "grp_a" }, deps);
-
-    expect(await deps.usageRepo.get("u1", "apiCalls", "2026-07-21")).toBe(1);
   });
 
   it("throws GROUP_NOT_FOUND when meta is gone but an orphaned member row survives (crash mid-sweep)", async () => {

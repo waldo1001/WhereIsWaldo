@@ -6,7 +6,7 @@
 import { AppError } from "../../http/errors";
 import { joinGroupRequestSchema, parseOrThrow } from "../../http/validate";
 import type { Clock } from "../../ports/support";
-import type { EntitlementsRepo, GroupCodeRepo, GroupRepo, UsageRepo, UserRepo } from "../../ports/repositories";
+import type { EntitlementsRepo, GroupCodeRepo, GroupRepo, UserRepo } from "../../ports/repositories";
 import { normalizeInviteCode } from "../family/inviteCode";
 import { getFeatures, type Features } from "../plan";
 import { deriveGroupState } from "./groupState";
@@ -17,7 +17,6 @@ export interface JoinGroupDeps {
   groupCodeRepo: GroupCodeRepo;
   userRepo: UserRepo;
   entitlementsRepo: EntitlementsRepo;
-  usageRepo: UsageRepo;
   clock: Clock;
 }
 
@@ -27,10 +26,6 @@ export interface JoinGroupInput {
 }
 
 export type JoinGroupResult = GroupListItem & { features: Features };
-
-function usageDate(now: Date): string {
-  return now.toISOString().slice(0, 10);
-}
 
 async function resolveFeatures(
   familyId: string | null,
@@ -123,7 +118,6 @@ export async function joinGroup(input: JoinGroupInput, deps: JoinGroupDeps): Pro
   if (!profile) {
     await deps.userRepo.createProfile(input.uid, { familyId: null, role: null, displayName });
   }
-  await deps.usageRepo.increment(callerFamilyId ?? input.uid, "apiCalls", usageDate(now));
 
   return {
     ...toGroupListItem(meta, "member", currentMembers.length + 1, "active"),
