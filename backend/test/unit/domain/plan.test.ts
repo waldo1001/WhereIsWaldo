@@ -14,7 +14,7 @@ describe("domain/plan", () => {
         minSyncIntervalMinutes: 5,
         locateRequestsPerDay: 100,
         maxActiveGroups: 5,
-        maxGroupMembers: 50,
+        maxGroupMembers: 200,
         maxGroupDurationDays: 30,
         groupGraceDays: 7,
       },
