@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// specs/004-ios-client.md §3.4 (001 §12.6) — composes ONLY design-system components. Also the
-/// target of the `waldo://group-join?code=…` deep link: `AppCoordinator.handleDeepLink(_:)` routes
-/// here with `prefillCode` already normalized.
+/// specs/004-ios-client.md §3.4/§3.5 (001 §12.6) — composes ONLY design-system components. Also
+/// the target of the `waldo://group-join?code=…` deep link AND, since specs/007, the
+/// `https://{joinLinkHost}/g#CODE` universal link: `AppCoordinator.handleDeepLink(_:)` routes here
+/// with `prefillCode` already normalized (empty when a valid https link carried no usable
+/// fragment, 007 §4).
 public struct GroupJoinScreen: View {
     @Environment(\.theme) private var theme
     @ObservedObject private var viewModel: GroupJoinViewModel

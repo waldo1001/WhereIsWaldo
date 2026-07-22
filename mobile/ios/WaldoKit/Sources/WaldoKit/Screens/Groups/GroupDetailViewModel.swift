@@ -162,6 +162,21 @@ public final class GroupDetailViewModel: ObservableObject {
         let formatted = "\(clean.prefix(4))-\(clean.suffix(4))"
         return "Join \(groupName) on Where's waldo! Group code: \(formatted)"
     }
+
+    /// specs/007-public-join-links.md §1, specs/004-ios-client.md §3.5 — the canonical
+    /// `https://{joinLinkHost}/g#CODE` link: this is what the detail screen's `ShareLink` now
+    /// shares and what its on-device QR encodes ("the https form is the canonical one for sharing
+    /// and QR", 007 §1). Built via `URLComponents` (not string interpolation) so the code is
+    /// provably set through the **fragment** property, never the path or query — the load-bearing
+    /// privacy property that keeps the join capability out of every server/CDN log by construction.
+    public static func joinLink(for code: String, joinLinkHost: String) -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = joinLinkHost
+        components.path = "/g"
+        components.fragment = code.uppercased()
+        return components.url!
+    }
 }
 
 private extension GroupDetail {

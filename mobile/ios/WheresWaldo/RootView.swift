@@ -14,6 +14,9 @@ struct RootView: View {
 
     private let authProvider: AuthProviding
     private let apiClient: WaldoAPIClient
+    // specs/004-ios-client.md §3.5, specs/007-public-join-links.md §1 — threaded into
+    // `GroupDetailScreen` for its share link/QR (`AppConfig.joinLinkHost`).
+    private let joinLinkHost: String
 
     // specs/004-ios-client.md §4.1, §8 — AuthMode.stubLocal (default) matches the backend's
     // AUTH_MODE=insecure-local (specs/001 §2.3); AuthMode.firebase swaps in FirebaseAuthProvider,
@@ -28,6 +31,7 @@ struct RootView: View {
             self.authProvider = FirebaseAuthProvider()
         }
         self.apiClient = URLSessionAPIClient(baseURL: config.baseURL, authProvider: authProvider)
+        self.joinLinkHost = config.joinLinkHost
     }
 
     var body: some View {
@@ -88,6 +92,7 @@ struct RootView: View {
             case .groupDetail(let groupId):
                 GroupDetailScreen(
                     viewModel: GroupDetailViewModel(apiClient: apiClient, groupId: groupId),
+                    joinLinkHost: joinLinkHost,
                     onSelectMap: { coordinator.showGroupMap(groupId: groupId) },
                     onExit: { coordinator.showGroupsList() }
                 )
