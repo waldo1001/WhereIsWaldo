@@ -28,6 +28,7 @@ import com.whereswaldo.android.ui.groups.GroupDetailRoute
 import com.whereswaldo.android.ui.groups.GroupDetailViewModel
 import com.whereswaldo.android.ui.groups.GroupDetailViewModelFactory
 import com.whereswaldo.android.ui.groups.GroupJoinCodeSanitizer
+import com.whereswaldo.android.ui.groups.GroupJoinHttpsLinkParser
 import com.whereswaldo.android.ui.groups.GroupJoinRoute
 import com.whereswaldo.android.ui.groups.GroupJoinViewModel
 import com.whereswaldo.android.ui.groups.GroupJoinViewModelFactory
@@ -90,12 +91,25 @@ import com.whereswaldo.android.ui.signin.SignInViewModelFactory
  * — the app's first and only external deep link — whose `code` query argument is run through
  * [GroupJoinCodeSanitizer] **before** it ever reaches [GroupJoinRoute], since it is untrusted
  * external input (any app, or a malicious link, can launch this intent with an arbitrary string).
+ *
+ * **A6 addition** (specs/007-public-join-links.md, specs/003-android-client.md §12.3): the public
+ * `https://{JOIN_LINK_HOST}/g#CODE` join link is matched *before* this composable even runs — by
+ * [com.whereswaldo.android.MainActivity], which parses the launching `Intent`'s `data` `Uri` via
+ * [GroupJoinHttpsLinkParser] (deliberately **not** through a second [navDeepLink] entry here, since
+ * Navigation Compose's `uriPattern` placeholder matching covers path/query segments, not URL
+ * fragments — and the join code lives in the fragment, 007 §1) and passes the one
+ * [httpsJoinLinkResult] in. The `LaunchedEffect(Unit)` below fires that navigation exactly once per
+ * fresh [WaldoNavHost] composition (i.e. once per cold start / new `MainActivity` instance) —
+ * deliberately not a re-check of the live `Activity.intent` inside this graph itself, which would
+ * re-fire on every later in-app visit to [Destinations.GroupJoin] using the same (by-then-stale)
+ * intent data.
  */
 @Composable
 fun WaldoNavHost(
     container: AppContainer,
     homeViewModel: HomeViewModel,
     navController: NavHostController = rememberNavController(),
+    httpsJoinLinkResult: GroupJoinHttpsLinkParser.Result = GroupJoinHttpsLinkParser.Result.NoMatch,
 ) {
     var pendingLocateTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var pendingCreateContext by remember { mutableStateOf<GroupsListUiState.Content?>(null) }
@@ -105,6 +119,20 @@ fun WaldoNavHost(
     LaunchedEffect(authState) {
         if (authState is AuthState.SignedIn && navController.currentDestination?.route == Destinations.SignIn.route) {
             navController.popBackStack()
+        }
+    }
+
+    // A6 (specs/007 §4, specs/003 §12.3): one-time navigation to GroupJoin when this composition
+    // was launched from a matching https join link — "wrong host or path is ignored, never
+    // mis-routed" is already enforced by GroupJoinHttpsLinkParser.parse returning NoMatch, so
+    // there's nothing to do here in that case. A matching link with no usable fragment still
+    // navigates, with an empty (not error) prefill, per 007 §4.
+    LaunchedEffect(Unit) {
+        val matched = httpsJoinLinkResult as? GroupJoinHttpsLinkParser.Result.Matched ?: return@LaunchedEffect
+        val route = matched.sanitizedCode?.let { "group-join?code=$it" } ?: Destinations.GroupJoin.route
+        navController.navigate(route) {
+            popUpTo(Destinations.Home.route)
+            launchSingleTop = true
         }
     }
 
@@ -251,6 +279,7 @@ fun WaldoNavHost(
                 viewModel(factory = GroupDetailViewModelFactory(groupId, container.waldoApiClient))
             GroupDetailRoute(
                 viewModel = groupDetailViewModel,
+                joinLinkHost = container.appConfig.joinLinkHost,
                 onLeft = { navController.popBackStack(Destinations.Groups.route, false) },
                 onOpenMap = { id -> navController.navigate(Destinations.GroupMap.createRoute(id)) },
             )
