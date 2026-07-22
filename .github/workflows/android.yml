@@ -18,6 +18,16 @@ jobs:
     # collide with the ios workflow's job.
     name: android-build
     runs-on: ubuntu-latest
+    # A7 (docs/store-readiness.md §1): the four release-signing secrets are mapped to job-level
+    # env here — a step's `if:` cannot read `secrets.*` directly, and cannot read env vars set in
+    # its *own* `env:` block (only workflow/job-level env is visible to a step's own `if:`), so
+    # job-level is the only place this works. On forks/external PRs, and before H5 provisions the
+    # real secrets, these are empty strings (not missing) — every `if:` below checks `!= ''`.
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       # Structure check — cheap, always valid regardless of the Gradle project's state.
@@ -75,12 +85,23 @@ jobs:
       - name: unit tests
         working-directory: mobile/android
         run: ./gradlew test
-      # TODO(A2/H1): once release signing exists, add:
-      # - name: assemble (signed on main)
-      #   run: ./gradlew assembleRelease
-      #   working-directory: mobile/android
-      #   env:
-      #     KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      #     KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-      #     KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-      #     KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # A7 (docs/store-readiness.md §1): release signing. H5 provisions the real keystore/secrets
+      # in GitHub's secret store; until then — and always on PRs, which never need a signed build —
+      # `ANDROID_KEYSTORE_BASE64` is empty and these steps are skipped, so the workflow never fails
+      # for lack of a secret it can't have yet. Gated to `main` pushes too (not just secret
+      # presence): same-repo PR branches DO have secrets access, but a signed artifact is only
+      # ever produced from `main`.
+      - name: decode release keystore
+        if: env.ANDROID_KEYSTORE_BASE64 != '' && github.ref == 'refs/heads/main'
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: assemble (signed on main)
+        if: env.ANDROID_KEYSTORE_BASE64 != '' && github.ref == 'refs/heads/main'
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+      # Always runs (even if assemble failed) so the decoded keystore never lingers on the runner;
+      # a no-op when the step above didn't run (rm -f on a nonexistent path).
+      - name: clean up decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"

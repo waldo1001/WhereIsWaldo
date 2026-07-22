@@ -16,7 +16,13 @@ The convention use case (specs/007, 000 §D15/D16) requires strangers to *instal
 
 1. **Developer account:** check whether yours is a personal account created after 2023-11-13 — those must run a **closed test with ≥12 testers for 14 days** before production access. Organization accounts are exempt. This is lead time, plan for it.
 2. **Release keystore:** create locally (never committed — `docs/security-review-checklist.md`); enroll in **Play App Signing** (Google holds the app signing key; you keep the upload key). The **app signing key's SHA-256** (from the Play Console, not your upload key) is what goes into the Firebase Android app registration (006 §6.5) and `assetlinks.json` (007 §3).
-3. **A7 first:** `signingConfig` wired from CI/env references, `android.yml`'s release-build TODO resolved — no secret material in the repo.
+3. **A7 first:** `signingConfig` wired from CI/env references, `android.yml`'s release-build TODO resolved — no secret material in the repo. Once a real keystore exists, set these 4 **GitHub Actions repo secrets** (repo Settings → Secrets and variables → Actions — never commit them anywhere):
+   - `ANDROID_KEYSTORE_BASE64` — the keystore file, base64-encoded (e.g. `base64 -i release.jks | pbcopy` on macOS, `base64 -w0 release.jks` on Linux)
+   - `ANDROID_KEYSTORE_PASSWORD` — the keystore's store password
+   - `ANDROID_KEY_ALIAS` — the signing key's alias inside that keystore
+   - `ANDROID_KEY_PASSWORD` — the signing key's own password
+
+   Generate the keystore (before Play App Signing enrollment below) with `keytool -genkeypair -v -keystore release.jks -alias <alias> -keyalg RSA -keysize 2048 -validity 10000`; get its SHA-256 fingerprint for the app-signing handoff (006 §6.5 / 007 §3) with `keytool -list -v -keystore release.jks -alias <alias>`. Full Play Console / Play App Signing enrollment steps belong to H5 below, not this note.
 4. **Background-location declaration:** the app uses `ACCESS_BACKGROUND_LOCATION` (000 core functionality). Play requires a declaration + review with an in-app **prominent disclosure** before the runtime permission prompt (003 §11 covers the onboarding flow) and typically a demo video of that flow. Family-locator is an accepted use case — but the review is real; budget time.
 5. **Data safety form** (truthful, matching the specs): precise location — collected, shared *with other app users* (family/group members), encrypted in transit, **not sold**, deletable (once O7's spec lands); phone number — collected by Firebase Auth for authentication (not by the backend, 006 §2). Account deletion URL: required (O7 gate).
 6. **Content rating questionnaire**, target-API-level compliance (current Play policy floor), listing assets (icon, screenshots, feature graphic), support email.
