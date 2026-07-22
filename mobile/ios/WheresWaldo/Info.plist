@@ -29,9 +29,12 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
-	<!-- specs/004-ios-client.md §3.4, specs/005-temporary-groups.md §5 — the group-join deep
+	<!-- specs/004-ios-client.md §3.4/§3.5, specs/005-temporary-groups.md §5 — the group-join deep
 	     link (waldo://group-join?code=…), forwarded via onOpenURL to
-	     AppCoordinator.handleDeepLink. HTTPS universal links are deferred (000 §O16). -->
+	     AppCoordinator.handleDeepLink. HTTPS universal links (specs/007-public-join-links.md,
+	     https://{JOIN_LINK_HOST}/g#CODE) are handled by the SAME onOpenURL/handleDeepLink path via
+	     the Associated Domains entitlement below (prepared, not yet active — see
+	     WheresWaldo.entitlements) rather than a CFBundleURLTypes scheme; no change needed here. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

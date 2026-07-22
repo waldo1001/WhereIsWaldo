@@ -13,5 +13,20 @@
 	  Add this only once Apple grants the entitlement (Apple Developer Program enrollment required
 	  first). Adding it before the entitlement is granted breaks code signing.
 	-->
+	<!--
+	  PENDING (specs/007-public-join-links.md §3/§4, specs/004-ios-client.md §3.5) — Associated
+	  Domains for public join links (https://{JOIN_LINK_HOST}/g#CODE). Same precedent as the
+	  Location Push entitlement above: requires a paid Apple Developer Program membership;
+	  prepared now, activated at task H6, not blocking I6:
+	  <key>com.apple.developer.associated-domains</key>
+	  <array>
+	    <string>applinks:CHANGE-ME.azurestaticapps.net</string>
+	  </array>
+	  "CHANGE-ME.azurestaticapps.net" is the same obviously-placeholder host as
+	  AppConfig.placeholderJoinLinkHost (WaldoKit) — H4 records the real JOIN_LINK_HOST
+	  (docs/azure-setup.md §7); H6 swaps this placeholder for that real value AND uncomments the
+	  block once Apple Developer Program enrollment completes. Adding it before enrollment breaks
+	  code signing, exactly like the Location Push entitlement above.
+	-->
 </dict>
 </plist>
