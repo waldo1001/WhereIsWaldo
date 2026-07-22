@@ -26,7 +26,7 @@ jobs:
       - name: validate .well-known + config JSON (specs/007 §3, §5)
         run: |
           node -e "JSON.parse(require('fs').readFileSync('web/join/.well-known/assetlinks.json', 'utf8')); console.log('assetlinks.json OK')"
-          node -e "JSON.parse(require('fs').readFileSync('web/join/.well-known/apple-app-site-association', 'utf8')); console.log('apple-app-site-association OK')"
+          node -e "JSON.parse(require('fs').readFileSync('web/join/.well-known/apple-app-site-association.json', 'utf8')); console.log('apple-app-site-association OK')"
           node -e "JSON.parse(require('fs').readFileSync('web/join/staticwebapp.config.json', 'utf8')); console.log('staticwebapp.config.json OK')"
 
       - name: landing page security invariants (specs/007 §2, §7)
