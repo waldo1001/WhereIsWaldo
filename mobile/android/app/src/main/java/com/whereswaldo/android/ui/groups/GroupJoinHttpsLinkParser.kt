@@ -50,4 +50,32 @@ object GroupJoinHttpsLinkParser {
         if (!matches) return Result.NoMatch
         return Result.Matched(fragment?.let(GroupJoinCodeSanitizer::sanitize))
     }
+
+    /**
+     * [parse] guarded by [isFreshLaunch] (code review fix, 2026-07-22): Android recreates
+     * `MainActivity` with a fresh `onCreate` — and so a fresh `WaldoNavHost` composition, and so a
+     * fresh `LaunchedEffect(Unit)` — on rotation, dark/light-mode toggle, multi-window resize,
+     * font-scale/locale change, and process-death restore, all of which hand `getIntent()` back
+     * the **same original launch `Uri`** unchanged. Without this guard, a user who tapped the
+     * https link, landed on `GroupJoin`, then navigated elsewhere (e.g. Settings) would get
+     * forcibly yanked back to `GroupJoin` by the next rotation, since the recreated Activity would
+     * re-parse the same still-matching link and re-trigger the one-time navigation.
+     *
+     * [com.whereswaldo.android.MainActivity] calls this with `isFreshLaunch = (savedInstanceState
+     * == null)` — the standard Android idiom for "this `onCreate` is a genuinely new launch, not a
+     * config-change/process-death recreation" (the system only supplies a non-null
+     * `savedInstanceState` when restoring previously-saved state, which is exactly the set of
+     * recreations listed above). On a recreation this unconditionally returns [Result.NoMatch]
+     * regardless of how well-formed the (already-handled, now-stale) `Uri` still is, so the
+     * one-time navigation fires **at most once per genuinely new launch**, not once per
+     * recreation.
+     */
+    fun parseIfFreshLaunch(
+        isFreshLaunch: Boolean,
+        scheme: String?,
+        host: String?,
+        path: String?,
+        fragment: String?,
+        joinLinkHost: String,
+    ): Result = if (isFreshLaunch) parse(scheme, host, path, fragment, joinLinkHost) else Result.NoMatch
 }

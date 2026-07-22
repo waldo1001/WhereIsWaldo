@@ -23,9 +23,21 @@ import com.whereswaldo.android.ui.nav.WaldoNavHost
  * the join code lives in the URL **fragment** (007 §1), read directly via `Uri.getFragment()`. The
  * parsed [GroupJoinHttpsLinkParser.Result] is then handed to [WaldoNavHost] once, at composition;
  * its own `LaunchedEffect(Unit)` performs the one-time navigation, so this never re-fires on later
- * in-app navigation back to [com.whereswaldo.android.ui.nav.Destinations.GroupJoin] (re-checking
+ * *in-app* navigation back to [com.whereswaldo.android.ui.nav.Destinations.GroupJoin] (re-checking
  * the live `Activity.intent` from inside the nav graph itself would have exactly that staleness
- * bug, since `Activity.intent` doesn't change on in-app `NavController.navigate()` calls). */
+ * bug, since `Activity.intent` doesn't change on in-app `NavController.navigate()` calls).
+ *
+ * **Code-review fix (2026-07-22):** the parsing above is additionally guarded by
+ * `savedInstanceState == null` — i.e. routed through [GroupJoinHttpsLinkParser.parseIfFreshLaunch]
+ * rather than [GroupJoinHttpsLinkParser.parse] directly. Without this, rotation, a dark/light-mode
+ * toggle, multi-window resize, a font-scale/locale change, or process-death restore all recreate
+ * this Activity with a **fresh** `onCreate` (and so a fresh [WaldoNavHost] composition, and so a
+ * fresh `LaunchedEffect(Unit)`) while `getIntent()` keeps handing back the exact same original
+ * launch `Uri` — so a user who tapped the https link, landed on `GroupJoin`, then navigated
+ * elsewhere (e.g. Settings), would get forcibly yanked back to `GroupJoin` by the next rotation.
+ * `savedInstanceState` is non-null on precisely those recreations (the system only supplies it
+ * when restoring previously-saved state) and null on a genuinely new launch — the standard Android
+ * idiom for "handle this Intent once, not on every recreation." */
 class MainActivity : ComponentActivity() {
 
     private val container get() = (application as WaldoApplication).container
@@ -36,7 +48,8 @@ class MainActivity : ComponentActivity() {
         container.onActivityStarted(this)
 
         val launchingUri = intent?.data
-        val httpsJoinLinkResult = GroupJoinHttpsLinkParser.parse(
+        val httpsJoinLinkResult = GroupJoinHttpsLinkParser.parseIfFreshLaunch(
+            isFreshLaunch = savedInstanceState == null,
             scheme = launchingUri?.scheme,
             host = launchingUri?.host,
             path = launchingUri?.path,

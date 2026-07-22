@@ -99,10 +99,16 @@ import com.whereswaldo.android.ui.signin.SignInViewModelFactory
  * Navigation Compose's `uriPattern` placeholder matching covers path/query segments, not URL
  * fragments — and the join code lives in the fragment, 007 §1) and passes the one
  * [httpsJoinLinkResult] in. The `LaunchedEffect(Unit)` below fires that navigation exactly once per
- * fresh [WaldoNavHost] composition (i.e. once per cold start / new `MainActivity` instance) —
- * deliberately not a re-check of the live `Activity.intent` inside this graph itself, which would
- * re-fire on every later in-app visit to [Destinations.GroupJoin] using the same (by-then-stale)
- * intent data.
+ * *fresh composition* of [WaldoNavHost] — which is **not** the same as "once ever": rotation,
+ * dark/light-mode toggle, multi-window resize, font-scale/locale change, and process-death restore
+ * all recreate `MainActivity` (and so this composable) with a fresh `onCreate` while the launching
+ * `Intent` stays the same. [com.whereswaldo.android.MainActivity] closes that gap on its side by
+ * only ever passing a non-[GroupJoinHttpsLinkParser.Result.NoMatch] [httpsJoinLinkResult] on a
+ * genuinely new launch (`savedInstanceState == null`) — see its doc for the full reasoning — so
+ * this effect firing "once per fresh composition" only ever matters on that first, genuine launch.
+ * This is deliberately not a re-check of the live `Activity.intent` from inside this graph itself,
+ * which would re-fire on every later in-app visit to [Destinations.GroupJoin] using the same
+ * (by-then-stale) intent data.
  */
 @Composable
 fun WaldoNavHost(
@@ -124,9 +130,11 @@ fun WaldoNavHost(
 
     // A6 (specs/007 §4, specs/003 §12.3): one-time navigation to GroupJoin when this composition
     // was launched from a matching https join link — "wrong host or path is ignored, never
-    // mis-routed" is already enforced by GroupJoinHttpsLinkParser.parse returning NoMatch, so
-    // there's nothing to do here in that case. A matching link with no usable fragment still
-    // navigates, with an empty (not error) prefill, per 007 §4.
+    // mis-routed" is already enforced by GroupJoinHttpsLinkParser returning NoMatch, so there's
+    // nothing to do here in that case (this also covers an Activity *recreation*, since
+    // MainActivity only ever passes a non-NoMatch result on a genuinely fresh launch — see its
+    // doc). A matching link with no usable fragment still navigates, with an empty (not error)
+    // prefill, per 007 §4.
     LaunchedEffect(Unit) {
         val matched = httpsJoinLinkResult as? GroupJoinHttpsLinkParser.Result.Matched ?: return@LaunchedEffect
         val route = matched.sanitizedCode?.let { "group-join?code=$it" } ?: Destinations.GroupJoin.route
