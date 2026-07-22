@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { authenticate } from "../http/authGuard";
 import { ok, fail } from "../http/envelope";
 import { AppError } from "../http/errors";
+import { toSafeErrorLog } from "../http/errorLogging";
 import { memberUserIdParamSchema, parseOrThrow } from "../http/validate";
 import { createFamily } from "../domain/family/createFamily";
 import { getMyFamily } from "../domain/family/getMyFamily";
@@ -42,7 +43,7 @@ function errorResponse(err: unknown, requestId: string, context: InvocationConte
   if (err instanceof AppError) {
     return { status: err.httpStatus, jsonBody: fail(err, requestId) };
   }
-  context.error(`unhandled error in ${label}`, err);
+  context.error(`unhandled error in ${label}`, toSafeErrorLog(err));
   const internal = new AppError("INTERNAL_ERROR", "unexpected error");
   return { status: internal.httpStatus, jsonBody: fail(internal, requestId) };
 }

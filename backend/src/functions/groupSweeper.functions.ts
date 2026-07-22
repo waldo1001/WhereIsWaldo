@@ -7,6 +7,7 @@
 
 import { app, type InvocationContext, type Timer } from "@azure/functions";
 import { sweepGroups } from "../domain/group/groupSweeper";
+import { toSafeErrorLog } from "../http/errorLogging";
 import { TableUserRepo } from "../adapters/tables/usersTableRepo";
 import { TableGroupRepo } from "../adapters/tables/groupsTableRepo";
 import { TableGroupCodeRepo } from "../adapters/tables/groupCodesTableRepo";
@@ -50,7 +51,7 @@ app.timer("groupSweeper", {
         context.error("groupSweeper: per-row failures (retried on next scheduled run)", result.errors);
       }
     } catch (err) {
-      context.error("groupSweeper: unhandled error", err instanceof Error ? err.message : err);
+      context.error("groupSweeper: unhandled error", toSafeErrorLog(err));
     }
   },
 });
