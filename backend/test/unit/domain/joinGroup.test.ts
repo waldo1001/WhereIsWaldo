@@ -197,8 +197,8 @@ describe("domain/group/joinGroup", () => {
     it("throws GROUP_FULL with details.max once the roster hits the owner's plan maxGroupMembers cap", async () => {
       const deps = buildDeps();
       await seedGroup(deps, ACTIVE_META);
-      // Free plan cap is 50; owner + 49 members = 50 already (at cap).
-      for (let i = 0; i < 49; i += 1) {
+      // Free plan cap is 200; owner + 199 members = 200 already (at cap).
+      for (let i = 0; i < 199; i += 1) {
         await deps.groupRepo.addMember("grp_a", {
           userId: `existing${i}`,
           role: "member",
@@ -210,7 +210,7 @@ describe("domain/group/joinGroup", () => {
       await expectAppError(
         joinGroup({ uid: "u2", body: { code: "ABCD1234", displayName: "Noor" } }, deps),
         "GROUP_FULL",
-        { max: 50 },
+        { max: 200 },
       );
     });
 
