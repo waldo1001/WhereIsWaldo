@@ -239,4 +239,33 @@ struct GroupDetailViewModelTests {
         #expect(text.contains("7F3K-9QRZ"))
         #expect(text.contains("Festival crew"))
     }
+
+    // specs/007-public-join-links.md §1, specs/004-ios-client.md §3.5 — the canonical https link
+    // now used by the detail screen's `ShareLink` and on-device QR (007: "the https form is the
+    // canonical one for sharing and QR").
+    @Test func joinLink_buildsHttpsLinkWithCanonicalUppercaseCodeInTheFragment() {
+        let link = GroupDetailViewModel.joinLink(for: "7f3k9qrz", joinLinkHost: "join.example.test")
+
+        #expect(link.absoluteString == "https://join.example.test/g#7F3K9QRZ")
+        #expect(link.host == "join.example.test")
+        #expect(link.path == "/g")
+        #expect(link.fragment == "7F3K9QRZ")
+    }
+
+    @Test func joinLink_neverPutsTheCodeInThePathOrQuery() {
+        // The load-bearing privacy property of 007 §1: the code must live ONLY in the fragment, so
+        // it never reaches a server/CDN log. Assert directly against `URLComponents`, not just the
+        // absolute string, so a future accidental `?code=` regression would be caught here.
+        let link = GroupDetailViewModel.joinLink(for: "7F3K9QRZ", joinLinkHost: "join.example.test")
+        let components = URLComponents(url: link, resolvingAgainstBaseURL: false)
+
+        #expect(components?.queryItems == nil)
+        #expect(components?.path == "/g")
+        #expect(!(components?.path.contains("7F3K9QRZ") ?? true))
+    }
+
+    @Test func joinLink_alreadyCanonicalCode_isUnchanged() {
+        let link = GroupDetailViewModel.joinLink(for: "9XPT4WKA", joinLinkHost: "swa-whereiswaldo.azurestaticapps.net")
+        #expect(link.absoluteString == "https://swa-whereiswaldo.azurestaticapps.net/g#9XPT4WKA")
+    }
 }

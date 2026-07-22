@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// specs/004-ios-client.md §3.4 (001 §12.3–12.9; 005 §2.3) — composes ONLY design-system
-/// components (bar `ShareLink`/`DatePicker`/`.confirmationDialog`, the same documented
-/// system-primitive-exception pattern used by the invite/history screens; Android's equivalent
-/// exception is Material3 `AlertDialog`, specs/003 §4.3/§12.2). Rendering follows the 005 §2.3
-/// lazy-enforcement matrix: `active` shows the map entry point; roster is hidden for non-owner
-/// members during `ended` (grace); rename/extend/rotate are owner-and-active/ended-only (archived
-/// groups reject PATCH, 001 §12.4); kick/leave/delete stay available in every non-expired state,
-/// matching the matrix exactly. `GROUP_EXPIRED` renders as a persistent notice (`.expired`, same
-/// pattern as `GroupMapScreen`) requiring an explicit "Back to groups" tap, not a silent exit.
+/// specs/004-ios-client.md §3.4/§3.5 (001 §12.3–12.9; 005 §2.3; specs/007-public-join-links.md) —
+/// composes ONLY design-system components (bar `ShareLink`/`DatePicker`/`.confirmationDialog`, the
+/// same documented system-primitive-exception pattern used by the invite/history screens; Android's
+/// equivalent exception is Material3 `AlertDialog`, specs/003 §4.3/§12.2). Rendering follows the
+/// 005 §2.3 lazy-enforcement matrix: `active` shows the map entry point; roster is hidden for
+/// non-owner members during `ended` (grace); rename/extend/rotate are owner-and-active/ended-only
+/// (archived groups reject PATCH, 001 §12.4); kick/leave/delete stay available in every
+/// non-expired state, matching the matrix exactly. `GROUP_EXPIRED` renders as a persistent notice
+/// (`.expired`, same pattern as `GroupMapScreen`) requiring an explicit "Back to groups" tap, not a
+/// silent exit. Since 007/I6, the share card's `ShareLink` and on-device QR carry the canonical
+/// `https://{joinLinkHost}/g#CODE` link rather than plain text.
 public struct GroupDetailScreen: View {
     @Environment(\.theme) private var theme
     @ObservedObject private var viewModel: GroupDetailViewModel
@@ -18,15 +20,20 @@ public struct GroupDetailScreen: View {
     /// (rename/extend/end-now/rotate/kick/delete) funnels through this single pending-action +
     /// `.confirmationDialog`, rather than one boolean flag per action.
     @State private var pendingConfirmation: PendingConfirmation?
+    /// specs/007-public-join-links.md §1, specs/004-ios-client.md §3.5 — the deployment constant
+    /// the share link/QR are built against (`AppConfig.joinLinkHost`).
+    private let joinLinkHost: String
     private let onSelectMap: () -> Void
     private let onExit: () -> Void
 
     public init(
         viewModel: GroupDetailViewModel,
+        joinLinkHost: String = AppConfig.placeholderJoinLinkHost,
         onSelectMap: @escaping () -> Void,
         onExit: @escaping () -> Void
     ) {
         self.viewModel = viewModel
+        self.joinLinkHost = joinLinkHost
         self.onSelectMap = onSelectMap
         self.onExit = onExit
     }
@@ -126,14 +133,21 @@ public struct GroupDetailScreen: View {
         }
     }
 
+    /// specs/007-public-join-links.md §1/§4, specs/004-ios-client.md §3.5 — the https link is now
+    /// the canonical thing shared and encoded as a QR ("the https form is the canonical one for
+    /// sharing and QR"); the `waldo://` deep link stays supported for INCOMING opens (§4) but is no
+    /// longer what this screen hands out. The QR renders entirely on-device (`GroupJoinQRCodeView`
+    /// — CoreImage, never a networked service).
     private func shareCodeCard(code: String, name: String) -> some View {
-        WaldoCard {
+        let joinLink = GroupDetailViewModel.joinLink(for: code, joinLinkHost: joinLinkHost)
+        return WaldoCard {
             VStack(spacing: theme.spacing.sm) {
                 Text(GroupDetailViewModel.shareText(for: code, groupName: name))
                     .font(theme.typography.titleMedium)
                     .foregroundColor(theme.colors.onSurface)
                     .multilineTextAlignment(.center)
-                ShareLink(item: GroupDetailViewModel.shareText(for: code, groupName: name))
+                GroupJoinQRCodeView(text: joinLink.absoluteString)
+                ShareLink(item: joinLink)
             }
         }
     }
