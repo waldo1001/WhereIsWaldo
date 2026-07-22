@@ -170,6 +170,13 @@ Screen inventory and behavior mirror the Android spec **exactly** — see [003 �
 
 All request/response field names match 001 verbatim (`camelCase`, identical keys). `syncIntervalMinutes` request validation (allowed set, floor) is **not** duplicated client-side beyond what the UI needs for a sane picker (I2 concern) — the server is the source of truth; the client surfaces `VALIDATION_FAILED`/`LIMIT_EXCEEDED` as returned.
 
+### 3.5 Public join links & QR ([007](007-public-join-links.md))
+
+- `AppConfig` (§8) gains **`joinLinkHost`** — the 007 §1 deployment constant (recorded at H4).
+- **Associated Domains** entitlement `applinks:{JOIN_LINK_HOST}` on the app target — requires a paid Apple Developer membership: **prepared now, activated at H6** (the AASA file's `{TEAMID}.{bundleId}` appID is likewise completed server-side at H6, 007 §3 — no app change needed then).
+- SwiftUI delivers universal links through the existing `.onOpenURL`; `GroupCodeParsing` (WaldoKit, pure/testable) gains the https form — `{JOIN_LINK_HOST}` host + `/g` path + **fragment-carried code** (007 §1), same charset whitelist and hyphen tolerance as the `waldo://` form; wrong host/path rejected; valid link without a usable fragment routes to `GroupJoinScreen` with an empty prefill.
+- Sharing: `ShareLink` switches to the 007 §1 https link; the detail screen renders a **QR of that link generated on-device** (CoreImage `CIQRCodeGenerator` — never a networked QR service, 007 §4). The `waldo://` deep link stays supported.
+
 ### 3.3 Token-expiry retry (001 §2.1)
 
 `URLSessionAPIClient` catches a decoded `AUTH_TOKEN_EXPIRED` error, calls `authProvider.refreshIDToken()`, and retries the **same** request exactly once; a second `AUTH_TOKEN_EXPIRED` propagates to the caller. This is orthogonal to §4 below (which reacts to the **push**-token refreshing, not the Firebase ID token).

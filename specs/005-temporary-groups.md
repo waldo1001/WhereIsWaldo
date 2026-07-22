@@ -85,11 +85,13 @@ A **daily timer-triggered function** (the project's first; domain logic pure and
 | Limit | Free value | Enforced at |
 |---|---|---|
 | `maxActiveGroups` | 5 | group create (001 §12.1) — counts the caller's non-expired memberships, owned + joined |
-| `maxGroupMembers` | 50 | join (001 §12.6) — governed by the **owner's** plan, resolved at join time |
+| `maxGroupMembers` | 200 | join (001 §12.6) — governed by the **owner's** plan, resolved at join time |
 | `maxGroupDurationDays` | 30 | create + `PATCH endsAt` — `endsAt` ≤ now + this horizon |
 | `groupGraceDays` | 7 | derived `graceUntil` for `grace`-policy groups |
 
 `flags.groups` gates the whole feature. Group-capacity overflow is `409 GROUP_FULL` (not `402` — the joiner isn't the upsell target; the owner's plan governs capacity).
+
+`maxGroupMembers` raised 50 → 200 (product-owner decision, 2026-07-22 — convention-scale groups, 000 §D15). Backend cost is flat (ingest fan-out is per-reporter and bounded by `maxActiveGroups`, not member count; the group map read stays one partition scan); the client-side consequence — map pin clustering above ~50 members — is deferred (000 §O17).
 
 ## 5. Non-goals & deferred (explicit)
 
@@ -99,7 +101,7 @@ A **daily timer-triggered function** (the project's first; domain logic pure and
 - **Group push notifications** (member joined / ending soon) — deferred; type names reserved in 001 §8.7 (000 §O14). The sweeper's daily run is the natural future emitter for "ending soon".
 - **Per-group pause** — 000 §O13; v1 answer is *leave*.
 - **Ownership transfer** — 000 §O15; v1 answer: the owner ends or deletes the group (`ownerCannotLeave`, 001 §12.8).
-- **HTTPS universal join links** — the in-app deep link `waldo://group-join?code=…` ships now (003/004); web-hosted `https://` links wait for the web spec.
+- **HTTPS universal join links** — *promoted out of non-goals (2026-07-22):* spec'd in [007](007-public-join-links.md) (`https://{JOIN_LINK_HOST}/g#CODE`, static landing page, App Links / Universal Links, on-device QR). The in-app `waldo://group-join?code=…` deep link remains valid. Still deferred to the future web spec: the web map/viz app itself.
 
 ## 6. Error cases
 
@@ -119,4 +121,4 @@ All codes from the 001 §10 catalog (no code invented here): `PROFILE_NOT_FOUND`
 
 ## Open questions
 
-None — deferred product matters are tracked in 000 §Open Items (O13 per-group pause, O14 group push, O15 ownership transfer, O16 universal links) with v1 behavior fixed by this spec.
+None — deferred product matters are tracked in 000 §Open Items (O13 per-group pause, O14 group push, O15 ownership transfer) with v1 behavior fixed by this spec; O16 universal links was promoted to [007](007-public-join-links.md) (2026-07-22).

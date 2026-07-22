@@ -560,7 +560,7 @@ Shape (present in every success envelope):
 { "subscriptionStatus": "free",
   "limits": { "maxDevices": 10, "maxGeofences": 20, "historyDays": 90,
               "minSyncIntervalMinutes": 5, "locateRequestsPerDay": 100,
-              "maxActiveGroups": 5, "maxGroupMembers": 50,
+              "maxActiveGroups": 5, "maxGroupMembers": 200,
               "maxGroupDurationDays": 30, "groupGraceDays": 7 },
   "flags": { "pushToLocate": true, "geofencing": true, "historyReplay": true, "groups": true } }
 ```
@@ -593,7 +593,7 @@ Shape (present in every success envelope):
 | 409 | `FAMILY_ALREADY_MEMBER` | Create/join while already in a family | — |
 | 409 | `GEOFENCE_VERSION_CONFLICT` | `If-Match` mismatch on §7.2 | `{ "currentEtag": "…" }` |
 | 409 | `GROUP_ALREADY_MEMBER` | Join a group the caller is already in (§12.6) | — |
-| 409 | `GROUP_FULL` | Roster at the owner-plan `maxGroupMembers` cap (§12.6, §9) | `{ "max": 50 }` |
+| 409 | `GROUP_FULL` | Roster at the owner-plan `maxGroupMembers` cap (§12.6, §9) | `{ "max": 200 }` |
 | 410 | `INVITE_EXPIRED` | Code past `expiresAt` | — |
 | 410 | `LOCATE_REQUEST_EXPIRED` | Fulfill after expiry (§6.3 — fix still stored) | — |
 | 410 | `GROUP_EXPIRED` | Operation on a group past its usable life for that path (matrix in 005 §2.3, §12) | — |
@@ -705,7 +705,7 @@ Any authenticated user. Bootstraps a profile if absent (§1.5.3 — `displayName
   "state": "active", "role": "member", "memberCount": 8, "code": "7F3K9QRZ" }
 ```
 
-Errors: unknown/rotated code → `400 GROUP_CODE_INVALID`; group past `endsAt` → `410 GROUP_EXPIRED`; already a member → `409 GROUP_ALREADY_MEMBER`; roster at the **owner's** plan `maxGroupMembers` (§9) → `409 GROUP_FULL`, `details: { "max": 50 }`. The membership insert is conditional; the capacity check is best-effort under concurrency (same accepted class as the §4.1 device cap).
+Errors: unknown/rotated code → `400 GROUP_CODE_INVALID`; group past `endsAt` → `410 GROUP_EXPIRED`; already a member → `409 GROUP_ALREADY_MEMBER`; roster at the **owner's** plan `maxGroupMembers` (§9) → `409 GROUP_FULL`, `details: { "max": 200 }`. The membership insert is conditional; the capacity check is best-effort under concurrency (same accepted class as the §4.1 device cap).
 
 ### 12.7 Rotate join code — `POST /groups/{groupId}/code/rotate` (owner)
 
