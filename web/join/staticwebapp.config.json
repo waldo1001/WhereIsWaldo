@@ -1,0 +1,27 @@
+{
+  "routes": [
+    {
+      "route": "/g",
+      "rewrite": "/index.html"
+    },
+    {
+      "route": "/.well-known/apple-app-site-association",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    },
+    {
+      "route": "/.well-known/assetlinks.json",
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  ],
+  "mimeTypes": {
+    ".json": "application/json"
+  },
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/.well-known/*"]
+  }
+}
