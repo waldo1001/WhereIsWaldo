@@ -6,9 +6,13 @@ import Foundation
 @MainActor
 public final class AppCoordinator: ObservableObject {
     @Published public private(set) var route: AppRoute
+    /// specs/004-ios-client.md §3.5, specs/007-public-join-links.md §1 — the deployment constant
+    /// `handleDeepLink` matches https universal links against (`AppConfig.joinLinkHost`).
+    private let joinLinkHost: String
 
-    public init(route: AppRoute = .signIn) {
+    public init(route: AppRoute = .signIn, joinLinkHost: String = AppConfig.placeholderJoinLinkHost) {
         self.route = route
+        self.joinLinkHost = joinLinkHost
     }
 
     public func showSignIn() {
@@ -75,12 +79,22 @@ public final class AppCoordinator: ObservableObject {
         route = .groupMap(groupId: groupId)
     }
 
-    /// The app target's `onOpenURL` forwards here (specs/004 §3.4) — `GroupCodeParsing` (pure,
-    /// WaldoKit) validates/normalizes the incoming `waldo://group-join?code=…` link BEFORE any
-    /// route change; an unrecognized URL is silently ignored (no route change, no crash) rather
+    /// The app target's `onOpenURL` forwards here (specs/004 §3.4/§3.5) — `GroupCodeParsing` (pure,
+    /// WaldoKit) validates/normalizes the incoming link BEFORE any route change. Two forms are
+    /// recognized: the legacy `waldo://group-join?code=…` scheme (unchanged behavior — an
+    /// unrecognized/codeless link is silently ignored, no route change, no crash) and, since 007,
+    /// the `https://{joinLinkHost}/g#CODE` universal link, where a recognized host+path with no
+    /// usable fragment DOES route to the join screen with an empty prefill (007 §4 / 003 §12.3) —
+    /// a deliberate difference from the `waldo://` case, since only the https form's contract
+    /// specifies that behavior. A URL matching neither form is silently ignored either way, rather
     /// than surfacing a raw error for what may be an unrelated/malformed external URL.
     public func handleDeepLink(_ url: URL) {
-        guard let code = GroupCodeParsing.normalize(url.absoluteString) else { return }
-        route = .groupJoin(prefillCode: code)
+        if let code = GroupCodeParsing.normalize(url.absoluteString) {
+            route = .groupJoin(prefillCode: code)
+            return
+        }
+        if case .recognized(let code) = GroupCodeParsing.matchHttpsJoinLink(url, joinLinkHost: joinLinkHost) {
+            route = .groupJoin(prefillCode: code ?? "")
+        }
     }
 }
