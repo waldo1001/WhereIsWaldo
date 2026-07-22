@@ -20,13 +20,28 @@ import FirebaseAuth
 /// (this session has no linked SDK to check them against).
 final class FirebaseAuthProvider: AuthProviding {
 #if canImport(FirebaseAuth)
-    private static let verificationIDDefaultsKey = "com.whereswaldo.phoneAuth.verificationID"
+    private static let verificationIDKeychainKey = "com.whereswaldo.phoneAuth.verificationID"
 
-    // Stored in-memory + UserDefaults (specs/004 §4.1): the app may be backgrounded while the SMS
-    // arrives, so the verification session must survive a relaunch.
+    private let keychain: KeychainStoring
+
+    init(keychain: KeychainStoring = KeychainStore()) {
+        self.keychain = keychain
+    }
+
+    // Stored in the Keychain (I7 hardening — previously UserDefaults, flagged non-blocking in I3's
+    // security review): the app may be backgrounded while the SMS arrives, so the verification
+    // session must survive a relaunch, but it's a Firebase session handle, not something that
+    // belongs in plaintext, unencrypted storage. See KeychainStore's doc comment for the
+    // accessibility-class rationale.
     private var verificationID: String? {
-        get { UserDefaults.standard.string(forKey: Self.verificationIDDefaultsKey) }
-        set { UserDefaults.standard.set(newValue, forKey: Self.verificationIDDefaultsKey) }
+        get { keychain.string(forKey: Self.verificationIDKeychainKey) }
+        set {
+            if let newValue {
+                keychain.setString(newValue, forKey: Self.verificationIDKeychainKey)
+            } else {
+                keychain.removeString(forKey: Self.verificationIDKeychainKey)
+            }
+        }
     }
 
     var currentUserId: String? { Auth.auth().currentUser?.uid }
@@ -56,7 +71,7 @@ final class FirebaseAuthProvider: AuthProviding {
 
     func confirmCode(_ code: String) async throws {
         guard let verificationID else {
-            // No verification in flight (e.g. app relaunched mid-flow and UserDefaults was
+            // No verification in flight (e.g. app relaunched mid-flow and the Keychain entry was
             // cleared) — reads as CODE_EXPIRED ("must request a new code"), matching Android's
             // already-merged FirebaseAuthProvider/DevAuthProvider (specs/006 §4.2/§5).
             throw PhoneAuthError.codeExpired
